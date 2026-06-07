@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MERIDIAN — Design Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/meridian.css"/>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="hdr-l" style="gap:0;">
+    <div class="logo-grid"><span></span><span></span><span></span><span></span></div>
+    <span class="logo-name" style="margin-left:9px;">MERIDIAN</span>
+    <div class="vdiv"></div>
+    <span class="hdr-label">DESIGN STUDIO</span>
+    <div class="vdiv"></div>
+    <span id="hdr-process-name" class="hdr-label" style="color:var(--text0);">No process selected</span>
+    <span id="hdr-status" class="status-badge status-draft" style="display:none;">DRAFT</span>
+    <span id="hdr-version" class="hdr-label" style="margin-left:9px;display:none;"></span>
+  </div>
+  <div class="hdr-r">
+    <button class="hdr-btn" onclick="undoAction()" id="btn-undo" title="Undo (Ctrl+Z)" style="display:none;">↩ UNDO</button>
+    <button class="hdr-btn" onclick="newProcess()">+ NEW PROCESS</button>
+    <button class="hdr-btn primary" id="btn-save" onclick="saveProcess()" style="display:none;">SAVE</button>
+    <button class="hdr-btn success" id="btn-publish" onclick="publishProcess()" style="display:none;">PUBLISH</button>
+    <button class="hdr-btn" id="btn-export" onclick="exportSOP()" style="display:none;">EXPORT SOP</button>
+  </div>
+</div>
+
+<!-- NAV TABS -->
+<div id="nav-tabs">
+  <div class="nav-tab active" onclick="switchTab(this,'promap')">PROMAP</div>
+  <div class="nav-tab" onclick="switchTab(this,'arco')">ARCŌ</div>
+  <div class="nav-tab" onclick="switchTab(this,'cortex')">CORTEX</div>
+</div>
+
+<!-- PEDIGREE BAR -->
+<div class="pedigree-bar" id="pedigree-bar">No process selected</div>
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- SIDEBAR (shared) -->
+  <div id="sidebar">
+    <div class="sb-section">Processes</div>
+    <div id="process-list"><div style="padding:10px 14px;font-size:13px;color:var(--text2);">No processes yet.</div></div>
+    <div class="sb-hr"></div>
+    <div id="sidebar-promap">
+      <div class="sb-section">Step Palette</div>
+      <div class="step-type" draggable="true" data-type="start"      ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--teal-lo);border:1.5px solid var(--teal);border-radius:50%;"></div>Start</div>
+      <div class="step-type" draggable="true" data-type="process"    ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--bg2);border:1.5px solid var(--teal);"></div>Process Step</div>
+      <div class="step-type" draggable="true" data-type="control"    ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--amber-lo);border:2px solid var(--amber);"></div>Control Point</div>
+      <div class="step-type" draggable="true" data-type="ccp"        ondragstart="onDragStart(event)"><div class="step-dot" style="background:#1a0a00;border:2px solid #ff6b35;"></div>Critical Control Pt</div>
+      <div class="step-type" draggable="true" data-type="decision"   ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--amber-lo);border:1.5px solid var(--amber);transform:rotate(45deg);"></div>Decision Gate</div>
+      <div class="step-type" draggable="true" data-type="compliance" ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--green-lo);border:1.5px solid var(--green);"></div>Compliance Step</div>
+      <div class="step-type" draggable="true" data-type="system"     ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--blue-lo);border:1.5px solid var(--blue);"></div>System Step</div>
+      <div class="step-type" draggable="true" data-type="handoff"    ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--violet-lo);border:1.5px solid var(--violet);"></div>Handoff</div>
+      <div class="step-type" draggable="true" data-type="end"        ondragstart="onDragStart(event)"><div class="step-dot" style="background:var(--violet-lo);border:1.5px solid var(--violet);border-radius:50%;"></div>End</div>
+      <div class="sb-hr"></div>
+      <div class="sb-section">Legend</div>
+      <div style="padding:5px 14px;font-size:12px;color:var(--text2);line-height:2.2;">
+        <svg width="18" height="6" style="vertical-align:middle;margin-right:5px;"><line x1="0" y1="3" x2="13" y2="3" stroke="#9aaac8" stroke-width="1.5"/><polygon points="11,1 17,3 11,5" fill="#9aaac8"/></svg>Sequence<br/>
+        <svg width="18" height="6" style="vertical-align:middle;margin-right:5px;"><line x1="0" y1="3" x2="16" y2="3" stroke="#e04838" stroke-width="1.5" stroke-dasharray="4,2"/></svg>Dependency<br/>
+        <svg width="18" height="6" style="vertical-align:middle;margin-right:5px;"><line x1="0" y1="3" x2="16" y2="3" stroke="#9b7ef8" stroke-width="1.5" stroke-dasharray="3,2"/></svg>Loop-back
+      </div>
+    </div>
+    <div id="sidebar-arco" style="display:none;">
+      <div class="sb-section">Upload SOP</div>
+      <div id="arco-upload-zone"
+        style="margin:6px 10px;border:1.5px dashed var(--border);border-radius:var(--radius);padding:14px 10px;text-align:center;cursor:pointer;transition:all .15s;"
+        onclick="document.getElementById('arco-file-input').click()"
+        ondragover="event.preventDefault();this.style.borderColor='var(--amber)';this.style.background='var(--amber-lo)'"
+        ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+        ondrop="this.style.borderColor='var(--border)';this.style.background='';handleArcoFileDrop(event)">
+        <div style="font-size:18px;opacity:.5;margin-bottom:5px;">↑</div>
+        <div style="font-size:12px;color:var(--text1);font-weight:500;">Upload document</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px;">PDF · DOCX · TXT</div>
+        <input type="file" id="arco-file-input" accept=".pdf,.docx,.txt,.doc" style="display:none;" onchange="handleArcoFileSelect(event)"/>
+      </div>
+      <div class="sb-hr"></div>
+      <div class="sb-section">Quick Start</div>
+      <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe an accounts payable process')">AP Invoice Process</button>
+      <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe a procurement purchase order process')">Purchase Order</button>
+      <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe a manufacturing production batch process')">Production Batch</button>
+      <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe an HR onboarding process')">HR Onboarding</button>
+      <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe a sales order to dispatch process')">Sales Order</button>
+      <div class="sb-hr"></div>
+      <div class="sb-section">Mode</div>
+      <div style="padding:8px 14px;font-size:12px;color:var(--text2);" id="arco-mode-label">Mock mode — API key not set</div>
+    </div>
+  </div>
+
+  <!-- PROMAP VIEW -->
+  <div id="promap-view" style="display:flex;flex:1;min-height:0;">
+    <div id="canvas-wrap"
+      ondragover="event.preventDefault()"
+      ondrop="onDrop(event)"
+      onmousedown="onCanvasMouseDown(event)"
+      onmousemove="onCanvasMouseMove(event)"
+      onmouseup="onCanvasMouseUp(event)"
+      onwheel="onWheel(event)">
+      <svg id="canvas-svg"></svg>
+      <div id="canvas"></div>
+      <div id="undo-indicator">Undo</div>
+      <div id="empty-state">
+        <div class="es-title">PROCESS CANVAS</div>
+        <div class="es-sub">Drag step types from the left panel<br/>or use ARCŌ to describe your process<br/><br/>SELECT tool to move nodes<br/>CONNECT tool to link nodes</div>
+      </div>
+
+      <!-- Layer filter bar -->
+      <div id="layer-filter">
+        <span style="font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.08em;padding:4px 8px 4px 4px;border-right:1px solid var(--border);margin-right:2px;text-transform:uppercase;white-space:nowrap;">Layers</span>
+        <button class="lf-btn active" onclick="setLayerFilter('all')">All</button>
+        <button class="lf-btn" onclick="setLayerFilter('controls-only')">Controls</button>
+        <button class="lf-btn" onclick="setLayerFilter('critical-only')">Critical</button>
+        <button class="lf-btn" onclick="setLayerFilter('manual-controls')">Manual</button>
+        <button class="lf-btn" onclick="setLayerFilter('compliance-view')">Compliance</button>
+        <button class="lf-btn" onclick="setLayerFilter('process-only')">Process</button>
+        <button class="lf-btn" onclick="setLayerFilter('monitoring-view')">Monitored</button>
+      </div>
+
+      <!-- Float triggers -->
+      <div id="float-triggers">
+        <button class="float-trigger" id="ft-arco" onclick="toggleFloatPanel('arco')">ARCŌ</button>
+        <button class="float-trigger" id="ft-cortex" onclick="toggleFloatPanel('cortex')">CORTEX</button>
+      </div>
+
+      <!-- Floating ARCŌ panel -->
+      <div class="float-panel" id="float-arco" style="display:none;flex-direction:column;">
+        <div class="float-panel-header">
+          <span class="float-panel-title">ARCŌ</span>
+          <div class="float-panel-controls">
+            <button class="float-ctrl-btn" onclick="minimizeFloatPanel('arco')">−</button>
+            <button class="float-ctrl-btn" onclick="toggleFloatPanel('arco')">×</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;height:400px;">
+          <div id="float-arco-feed" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;"></div>
+          <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:flex-end;">
+            <textarea id="float-arco-input" placeholder="Ask ARCŌ..." rows="1"
+              style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text0);font-family:var(--font);font-size:12px;padding:7px;outline:none;resize:none;max-height:70px;user-select:text;"
+              onkeydown="floatArcoKeydown(event)" oninput="autoResizeTextarea(this)"></textarea>
+            <button class="arco-send-btn" style="font-size:12px;padding:7px 11px;" onclick="floatArcoSend()">→</button>
+          </div>
+          <div style="padding:7px 8px;border-top:1px solid var(--border);background:var(--bg2);">
+            <button id="float-arco-send-promap" class="hdr-btn success" onclick="sendToPromap()" style="width:100%;opacity:.35;cursor:not-allowed;">→ SEND TO PROMAP</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Floating CORTEX panel -->
+      <div class="float-panel float-left" id="float-cortex" style="display:none;flex-direction:column;">
+        <div class="float-panel-header">
+          <span class="float-panel-title">CORTEX</span>
+          <div class="float-panel-controls">
+            <button class="float-ctrl-btn" onclick="minimizeFloatPanel('cortex')">−</button>
+            <button class="float-ctrl-btn" style="color:var(--amber);font-size:11px;" onclick="cortexEvaluate()">▶ RUN</button>
+            <button class="float-ctrl-btn" onclick="toggleFloatPanel('cortex')">×</button>
+          </div>
+        </div>
+        <div style="padding:12px;max-height:460px;overflow-y:auto;font-size:12px;color:var(--text2);">
+          Run evaluation to see results here.
+        </div>
+      </div>
+      <div id="toolbar">
+        <button class="tb-btn active" id="tb-select"  onclick="setTool('select')">SELECT</button>
+        <button class="tb-btn"        id="tb-connect" onclick="setTool('connect')">CONNECT</button>
+        <button class="tb-btn"        id="tb-loop"    onclick="setTool('loop')">LOOP-BACK</button>
+        <button class="tb-btn"        id="tb-dep"     onclick="setTool('dependency')">DEPENDENCY</button>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" onclick="deleteSelectedConfirm()">DELETE</button>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" onclick="autoLayout()">AUTO-LAYOUT</button>
+        <button class="tb-btn" onclick="fitView()">FIT VIEW</button>
+      </div>
+      <div id="zoom-ctrl">
+        <button class="zoom-btn" onclick="zoom(0.1)">+</button>
+        <button class="zoom-btn" id="zoom-label">100%</button>
+        <button class="zoom-btn" onclick="zoom(-0.1)">−</button>
+      </div>
+    </div>
+    <div id="props-panel">
+      <div class="props-header">
+        <span class="props-title">Properties</span>
+        <span class="props-close" onclick="clearSelection()">×</span>
+      </div>
+      <div class="props-body" id="props-body">
+        <div style="font-size:13px;color:var(--text2);padding:8px 0;">Select a step to edit its properties.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARCŌ VIEW -->
+  <div id="arco-view" style="display:none;flex:1;min-height:0;">
+    <div id="arco-chat">
+      <div id="arco-feed"></div>
+      <div id="arco-input-bar">
+        <textarea id="arco-input" placeholder="Describe your process in plain language... (Enter to send, Shift+Enter for new line)"
+          onkeydown="arcoKeydown(event)" oninput="autoResizeTextarea(this)" rows="1"></textarea>
+        <button class="arco-send-btn" onclick="arcoSend()">SEND →</button>
+        <button class="hdr-btn warn" id="arco-stop-btn" onclick="arcoStop()" style="display:none;" title="Stop processing">■ Stop</button>
+        <button class="hdr-btn success" id="arco-send-promap" onclick="sendToPromap()" style="opacity:.35;cursor:not-allowed;" title="Send extracted steps to PROMAP">→ PROMAP</button>
+        <button class="hdr-btn" onclick="arcoReset()" title="Reset conversation">↺</button>
+      </div>
+    </div>
+    <div id="arco-panel">
+      <div id="arco-panel-header">
+        <span class="arco-panel-title">Extracted Steps</span>
+      </div>
+      <div id="arco-extracted"></div>
+      <div style="padding:14px;font-size:12px;color:var(--text2);line-height:1.8;" id="arco-hints">
+        ARCŌ will extract:<br/>
+        · Step names &amp; sequence<br/>
+        · Owners &amp; RACI<br/>
+        · Timing &amp; frequency<br/>
+        · Control &amp; compliance flags<br/>
+        · Critical control points<br/>
+        · Record keeping needs<br/>
+        · Dependencies &amp; loops
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+  <!-- CORTEX VIEW -->
+  <div id="cortex-view" style="display:none;flex:1;min-height:0;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+      <div>
+        <span style="font-size:13px;letter-spacing:.1em;color:var(--text1);text-transform:uppercase;">CORTEX — Risk & Controls Evaluation</span>
+        <span style="font-size:11px;color:var(--text2);margin-left:12px;">Evaluates the active PROMAP blueprint</span>
+      </div>
+      <button class="hdr-btn primary" onclick="cortexEvaluate()">▶ RUN EVALUATION</button>
+    </div>
+    <div id="cortex-content" style="flex:1;overflow-y:auto;padding:16px;">
+      <div style="text-align:center;padding:60px 20px;">
+        <div style="font-size:16px;color:var(--text2);letter-spacing:.1em;margin-bottom:10px;">CORTEX</div>
+        <div style="font-size:13px;color:var(--text2);">Load a process in PROMAP then click RUN EVALUATION</div>
+      </div>
+    </div>
+  </div>
+
+<!-- NOTIFICATIONS -->
+<div id="notif-area"></div>
+
+<!-- NEW PROCESS MODAL -->
+<div id="modal-new" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">NEW PROCESS</span><span class="props-close" onclick="closeModal('modal-new')">×</span></div>
+    <div class="modal-body">
+      <div class="field-group"><label class="field-label">Process Name *</label><input class="field-input" id="np-name" placeholder="e.g. Accounts Payable Invoice Processing" style="user-select:text;"/></div>
+      <div class="field-group"><label class="field-label">Process ID</label><input class="field-input" id="np-id" placeholder="e.g. FIN-AP-001" style="user-select:text;"/></div>
+      <div class="field-group"><label class="field-label">Parent Process (Pedigree)</label><select class="field-select" id="np-parent"><option value="">— None (Top Level) —</option></select></div>
+      <div class="field-group"><label class="field-label">Function</label>
+        <select class="field-select" id="np-fn"><option value="">Select function...</option><option>Manufacturing</option><option>Procurement</option><option>Sales</option><option>Finance</option><option>HR</option></select>
+      </div>
+      <div class="field-row">
+        <div class="field-group"><label class="field-label">Owner (Role)</label><input class="field-input" id="np-owner" placeholder="e.g. Finance Manager" style="user-select:text;"/></div>
+        <div class="field-group"><label class="field-label">Hierarchy Level</label>
+          <select class="field-select" id="np-level">
+            <option value="L1">L1 — Process Group</option><option value="L2" selected>L2 — Process</option><option value="L3">L3 — Sub-Process</option>
+            <option value="L4">L4 — Step</option><option value="L5">L5 — Task</option><option value="L6">L6 — Sub-Task</option>
+            <option value="L7">L7 — Action</option><option value="L8">L8 — Detail</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group"><label class="field-label">Description</label><textarea class="field-textarea" id="np-desc" rows="3" placeholder="Brief description..." style="user-select:text;"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="hdr-btn" onclick="closeModal('modal-new')">CANCEL</button>
+      <button class="hdr-btn primary" onclick="createProcess()">CREATE</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div id="modal-confirm" class="modal-overlay" style="display:none;">
+  <div class="modal confirm-modal">
+    <div class="modal-header"><span class="modal-title" id="confirm-title">CONFIRM DELETE</span></div>
+    <div class="modal-body">
+      <div class="confirm-msg" id="confirm-msg">Are you sure?</div>
+      <div class="confirm-sub" id="confirm-sub"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="hdr-btn" onclick="confirmDeleteCancel()">CANCEL</button>
+      <button class="hdr-btn warn" onclick="confirmDeleteOk()">DELETE</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/meridian-bus.js"></script>
+<script src="/js/promap.js"></script>
+<script src="/js/arco.js"></script>
+<script src="/js/cortex.js"></script>
+<script>
+  // Tab switching — wires both modules
+  function switchTab(el, tab) {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('promap-view').style.display  = tab === 'promap'  ? 'flex' : 'none';
+    document.getElementById('arco-view').style.display    = tab === 'arco'    ? 'flex' : 'none';
+    document.getElementById('cortex-view').style.display  = tab === 'cortex'  ? 'flex' : 'none';
+    document.getElementById('sidebar-promap').style.display = tab === 'promap' ? '' : 'none';
+    document.getElementById('sidebar-arco').style.display   = tab === 'arco'   ? '' : 'none';
+    if (tab === 'arco' && document.getElementById('arco-feed').children.length === 0) arcoGreet();
+    if (tab === 'arco' && typeof syncProcessContext === 'function') syncProcessContext();
+  }
+
+  function arcoPrompt(text) {
+    document.getElementById('arco-input').value = text;
+    arcoSend();
+  }
+</script>
+</body>
+</html>

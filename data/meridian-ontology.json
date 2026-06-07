@@ -1,0 +1,452 @@
+{
+  "_meta": {
+    "schema": "meridian-ontology",
+    "version": "1.6.0",
+    "product": "MERIDIAN",
+    "description": "Lean process ontology — node types, relationships, classifications, RACI rules, and inference hints for ARCŌ and CORTEX.",
+    "extensible": true,
+    "note": "This is the single source of truth for all process reasoning in MERIDIAN. Upgrade path: JSON schema → semantic ontology in V3+."
+  },
+
+  "nodeTypes": {
+    "_description": "All valid step types in a MERIDIAN process blueprint.",
+    "start": {
+      "label": "Start",
+      "description": "Entry point of a process or sub-process.",
+      "allowMultiple": false,
+      "requiredPerProcess": true,
+      "validTransitions": ["process", "control", "ccp", "decision", "system", "handoff"],
+      "raciRequired": false,
+      "classificationRequired": false,
+      "monitoringDefault": false
+    },
+    "end": {
+      "label": "End",
+      "description": "Terminal point of a process or sub-process.",
+      "allowMultiple": true,
+      "requiredPerProcess": true,
+      "validTransitions": [],
+      "raciRequired": false,
+      "classificationRequired": false,
+      "monitoringDefault": false
+    },
+    "process": {
+      "label": "Process Step",
+      "description": "A standard operational action or task.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "ccp", "decision", "system", "handoff", "compliance", "end"],
+      "raciRequired": true,
+      "classificationRequired": true,
+      "monitoringDefault": true
+    },
+    "control": {
+      "label": "Control",
+      "description": "A step that prevents, detects, or corrects risk. Must have a defined owner.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "ccp", "decision", "handoff", "end"],
+      "raciRequired": true,
+      "classificationRequired": true,
+      "monitoringDefault": true,
+      "rules": {
+        "mustHaveAccountable": true,
+        "mustHaveFrequency": true,
+        "mustHaveInputType": true,
+        "sodEligible": true
+      }
+    },
+    "ccp": {
+      "label": "Critical Control Point",
+      "description": "A control step where failure has critical consequence. Threshold and corrective action are mandatory.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "decision", "handoff", "end"],
+      "raciRequired": true,
+      "classificationRequired": true,
+      "monitoringDefault": true,
+      "rules": {
+        "mustHaveAccountable": true,
+        "mustHaveThreshold": true,
+        "mustHaveCorrectiveAction": true,
+        "mustHaveFrequency": true,
+        "recordRequired": true,
+        "sodEligible": true,
+        "smartFlag": true
+      }
+    },
+    "compliance": {
+      "label": "Compliance Step",
+      "description": "A step driven by regulatory or internal compliance obligation.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "decision", "handoff", "end"],
+      "raciRequired": true,
+      "classificationRequired": true,
+      "monitoringDefault": true,
+      "rules": {
+        "mustHaveAccountable": true,
+        "mustHaveFrameworkReference": true,
+        "recordRequired": true
+      }
+    },
+    "decision": {
+      "label": "Decision",
+      "description": "A branching point with two or more defined outcomes.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "ccp", "compliance", "handoff", "end"],
+      "raciRequired": true,
+      "classificationRequired": false,
+      "monitoringDefault": false,
+      "rules": {
+        "mustHaveMinBranches": 2,
+        "branchesLabelled": true
+      }
+    },
+    "system": {
+      "label": "System Step",
+      "description": "An automated step performed by a system with no human action required.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "ccp", "decision", "handoff", "end"],
+      "raciRequired": false,
+      "classificationRequired": true,
+      "monitoringDefault": true,
+      "rules": {
+        "inputTypeForced": "automated"
+      }
+    },
+    "handoff": {
+      "label": "Handoff",
+      "description": "Transfer of responsibility from one role, team, or system to another.",
+      "allowMultiple": true,
+      "requiredPerProcess": false,
+      "validTransitions": ["process", "control", "ccp", "compliance", "system", "decision", "end"],
+      "raciRequired": true,
+      "classificationRequired": false,
+      "monitoringDefault": false,
+      "rules": {
+        "mustHaveFromRole": true,
+        "mustHaveToRole": true,
+        "sodEligible": true
+      }
+    }
+  },
+
+  "raci": {
+    "_description": "RACI role definitions and assignment rules.",
+    "roles": {
+      "R": {
+        "label": "Responsible",
+        "description": "The person who does the work.",
+        "mandatory": true,
+        "allowMultiple": true
+      },
+      "A": {
+        "label": "Accountable",
+        "description": "The single owner who approves or signs off. One per step.",
+        "mandatory": true,
+        "allowMultiple": false
+      },
+      "C": {
+        "label": "Consulted",
+        "description": "Provides input before the step is completed.",
+        "mandatory": false,
+        "allowMultiple": true
+      },
+      "I": {
+        "label": "Informed",
+        "description": "Notified after the step is completed.",
+        "mandatory": false,
+        "allowMultiple": true
+      }
+    },
+    "rules": {
+      "singleAccountablePerStep": true,
+      "responsibleMandatory": true,
+      "accountableMustDifferFromResponsibleForControls": true,
+      "note": "Where R and A are the same person on a control step, flag as potential SoD risk."
+    }
+  },
+
+  "classifications": {
+    "_description": "Step classification taxonomy. Multi-select allowed.",
+    "control": {
+      "label": "Control",
+      "description": "Step performs a risk control function.",
+      "compatibleNodeTypes": ["process", "control", "ccp", "compliance", "handoff"]
+    },
+    "compliance-internal": {
+      "label": "Internal Compliance",
+      "description": "Step fulfils an internal policy or procedural obligation.",
+      "compatibleNodeTypes": ["process", "control", "ccp", "compliance"]
+    },
+    "compliance-regulatory": {
+      "label": "Regulatory Compliance",
+      "description": "Step fulfils an external regulatory or legal obligation.",
+      "compatibleNodeTypes": ["process", "control", "ccp", "compliance"],
+      "rules": {
+        "mustHaveFrameworkReference": true
+      }
+    },
+    "reporting": {
+      "label": "Reporting",
+      "description": "Step produces a report or data output for oversight purposes.",
+      "compatibleNodeTypes": ["process", "control", "compliance", "system"]
+    },
+    "information": {
+      "label": "Information",
+      "description": "Step captures, stores, or transmits information only.",
+      "compatibleNodeTypes": ["process", "system", "handoff"]
+    }
+  },
+
+  "relationships": {
+    "_description": "Valid inter-node relationship types in a process blueprint.",
+    "sequence": {
+      "label": "Sequence",
+      "description": "Standard flow from one step to the next.",
+      "directed": true,
+      "allowLoop": false
+    },
+    "dependency": {
+      "label": "Dependency",
+      "description": "Step B cannot begin until Step A is complete.",
+      "directed": true,
+      "allowLoop": false,
+      "rules": {
+        "mustBeExplicit": true
+      }
+    },
+    "loopback": {
+      "label": "Loopback",
+      "description": "Flow returns to an earlier step under defined conditions.",
+      "directed": true,
+      "allowLoop": true,
+      "rules": {
+        "mustHaveCondition": true,
+        "mustHaveExitCondition": true,
+        "maxLoopsBeforeEscalation": 3
+      }
+    },
+    "handoff": {
+      "label": "Handoff",
+      "description": "Transfer of process ownership across roles or systems.",
+      "directed": true,
+      "allowLoop": false,
+      "rules": {
+        "fromAndToRequired": true
+      }
+    },
+    "exception": {
+      "label": "Exception Path",
+      "description": "Alternate flow triggered by an error, failure, or out-of-tolerance condition.",
+      "directed": true,
+      "allowLoop": false,
+      "rules": {
+        "mustHaveTriggerCondition": true,
+        "mustResolveToEndOrEscalation": true
+      }
+    }
+  },
+
+  "defaults": {
+    "_description": "System-wide defaults applied when a field is not explicitly set.",
+    "frequency": "monthly",
+    "inputType": "manual",
+    "classifications": ["control"],
+    "monitoring": true,
+    "recordRequired": true,
+    "retentionPeriod": "10 years",
+    "level": "L4",
+    "smartFlag": false
+  },
+
+  "inferenceRules": {
+    "_description": "Rule hints consumed by CORTEX and ARCŌ for evaluation and suggestion. Not executable code — logical declarations only.",
+
+    "cortex": [
+      {
+        "id": "CR-001",
+        "label": "Missing Accountable on Control",
+        "condition": "nodeType IN [control, ccp, compliance] AND raci.A IS NULL",
+        "severity": "critical",
+        "message": "Every control, CCP, or compliance step must have a single Accountable role defined."
+      },
+      {
+        "id": "CR-002",
+        "label": "CCP Missing Threshold",
+        "condition": "nodeType = ccp AND threshold IS NULL",
+        "severity": "critical",
+        "message": "Critical Control Points must define a measurable threshold."
+      },
+      {
+        "id": "CR-003",
+        "label": "CCP Missing Corrective Action",
+        "condition": "nodeType = ccp AND correctiveAction IS NULL",
+        "severity": "critical",
+        "message": "Critical Control Points must define a corrective action for threshold breach."
+      },
+      {
+        "id": "CR-004",
+        "label": "SoD Risk — Same R and A on Control",
+        "condition": "nodeType IN [control, ccp] AND raci.R = raci.A",
+        "severity": "high",
+        "message": "Responsible and Accountable are the same role on a control step. Segregation of duties risk."
+      },
+      {
+        "id": "CR-005",
+        "label": "Regulatory Classification Missing Framework",
+        "condition": "classification CONTAINS compliance-regulatory AND frameworkReference IS NULL",
+        "severity": "high",
+        "message": "Steps classified as regulatory compliance must reference the applicable framework."
+      },
+      {
+        "id": "CR-006",
+        "label": "Monitoring Flag Missing on Control",
+        "condition": "nodeType IN [control, ccp] AND monitoring = false",
+        "severity": "medium",
+        "message": "Control and CCP steps should have monitoring enabled."
+      },
+      {
+        "id": "CR-007",
+        "label": "Process Has No Control Steps",
+        "condition": "processStepCount > 0 AND controlStepCount = 0",
+        "severity": "high",
+        "message": "Process has no control or CCP steps defined. Risk coverage is absent."
+      },
+      {
+        "id": "CR-008",
+        "label": "Decision Step Has Fewer Than Two Branches",
+        "condition": "nodeType = decision AND outboundEdgeCount < 2",
+        "severity": "critical",
+        "message": "Decision steps must have at least two labelled outcome branches."
+      },
+      {
+        "id": "CR-009",
+        "label": "Loopback Missing Exit Condition",
+        "condition": "relationshipType = loopback AND exitCondition IS NULL",
+        "severity": "high",
+        "message": "Loopback paths must define a condition to exit the loop."
+      },
+      {
+        "id": "CR-010",
+        "label": "Misclassified Step Type",
+        "condition": "nodeType = process AND (threshold IS NOT NULL OR correctiveAction IS NOT NULL)",
+        "severity": "medium",
+        "message": "Step has CCP-level attributes but is typed as a standard process step. Consider reclassifying as CCP or control."
+      },
+      {
+        "id": "CR-011",
+        "label": "No Process Exists",
+        "condition": "processStepCount = 0",
+        "severity": "not-applicable",
+        "message": "No process steps found. Health evaluation is not applicable."
+      },
+      {
+        "id": "CR-012",
+        "label": "SMART Flag Missing on CCP",
+        "condition": "nodeType = ccp AND smartFlag = false",
+        "severity": "medium",
+        "message": "Critical Control Points should have SMART (Self Monitoring and Reporting) enabled."
+      }
+    ],
+
+    "arco": [
+      {
+        "id": "AR-001",
+        "label": "Intake Step Classification Hint",
+        "description": "When a user describes a step involving checking, verifying, approving, or authorising — suggest control or ccp type."
+      },
+      {
+        "id": "AR-002",
+        "label": "Intake RACI Prompt",
+        "description": "If a step is extracted and no Accountable is stated, ARCŌ must ask who owns the outcome of this step."
+      },
+      {
+        "id": "AR-003",
+        "label": "Threshold Prompt for CCP",
+        "description": "If a step is classified as CCP, ARCŌ must ask for the threshold value and corrective action before finalising."
+      },
+      {
+        "id": "AR-004",
+        "label": "Loopback Detection",
+        "description": "If a user describes a rework, retry, or rejection flow, flag as loopback and ask for exit condition."
+      },
+      {
+        "id": "AR-005",
+        "label": "SoD Advisory",
+        "description": "If R and A are the same role on a control step, ARCŌ should note the SoD consideration without blocking."
+      },
+      {
+        "id": "AR-006",
+        "label": "Framework Reference Prompt",
+        "description": "If a step is classified as regulatory compliance, ARCŌ should ask which framework or obligation it relates to."
+      }
+    ]
+  },
+
+  "layerFilters": {
+    "_description": "Named filter presets for PROMAP layer toggle feature (N05). Each filter defines which nodeTypes and classifications are visible.",
+    "all": {
+      "label": "All Steps",
+      "nodeTypes": ["start", "end", "process", "control", "ccp", "compliance", "decision", "system", "handoff"],
+      "classifications": ["control", "compliance-internal", "compliance-regulatory", "reporting", "information"]
+    },
+    "controls-only": {
+      "label": "Controls Only",
+      "nodeTypes": ["control", "ccp"],
+      "classifications": ["control"]
+    },
+    "critical-only": {
+      "label": "Critical Points Only",
+      "nodeTypes": ["ccp"],
+      "classifications": []
+    },
+    "manual-controls": {
+      "label": "Manual Controls Only",
+      "nodeTypes": ["control", "ccp"],
+      "inputTypeFilter": "manual"
+    },
+    "compliance-view": {
+      "label": "Compliance View",
+      "nodeTypes": ["compliance", "control", "ccp"],
+      "classifications": ["compliance-internal", "compliance-regulatory"]
+    },
+    "process-only": {
+      "label": "Process Flow Only",
+      "nodeTypes": ["start", "end", "process", "decision", "handoff", "system"],
+      "classifications": []
+    },
+    "monitoring-view": {
+      "label": "Monitored Steps Only",
+      "nodeTypes": [],
+      "monitoringFilter": true
+    }
+  },
+
+  "hierarchy": {
+    "_description": "Process level definitions. Flexible — unlimited nesting. L1–L8 as guidance only.",
+    "levels": {
+      "L1": "Process Group",
+      "L2": "Process",
+      "L3": "Sub-Process",
+      "L4": "Activity (default)",
+      "L5": "Task",
+      "L6": "Step",
+      "L7": "Sub-Step",
+      "L8": "Detail"
+    },
+    "defaultLevel": "L4",
+    "maxLevels": null
+  },
+
+  "aiProviderAbstraction": {
+    "_description": "Structural hook for AI provider swap (P01 — parked V3+). ARCŌ calls this interface only, never the provider directly.",
+    "currentProvider": "anthropic",
+    "modelAlias": "arco-reasoning-engine",
+    "swappable": true,
+    "note": "Replace provider key and endpoint here to migrate ARCŌ to a self-hosted or alternative model. No changes to ARCŌ logic required."
+  }
+}
