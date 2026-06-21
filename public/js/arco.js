@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — ARCŌ Conversational Intake v1.6.2
-   Built on v1.5 working base + v1.6 features
+   MERIDIAN — ARCŌ Conversational Intake v1.6.11
+   Fixes: BUG-02/03/04 panel refresh + dedup; N61 connector reliability
    ═══════════════════════════════════════════════ */
 
 const ARCO = {
@@ -8,6 +8,9 @@ const ARCO = {
   extractedSteps: [],
   extractedConnections: [],
   extractedPatch: null,
+  ccpRegister: [],
+  dependencyMap: [],
+  monitoringRegister: [],
   currentProcess: null,
   apiKey: null,
   mode: 'mock',
@@ -149,6 +152,27 @@ function extractConnectionsFromReply(reply) {
   try { return JSON.parse(match[1].trim()); } catch(e) { return null; }
 }
 
+function extractCCPRegisterFromReply(reply) {
+  if (!reply) return null;
+  const match = reply.match(/<CCP_REGISTER>([\s\S]*?)<\/CCP_REGISTER>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1].trim()); } catch(e) { return null; }
+}
+
+function extractDependencyMapFromReply(reply) {
+  if (!reply) return null;
+  const match = reply.match(/<DEPENDENCY_MAP>([\s\S]*?)<\/DEPENDENCY_MAP>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1].trim()); } catch(e) { return null; }
+}
+
+function extractMonitoringRegisterFromReply(reply) {
+  if (!reply) return null;
+  const match = reply.match(/<MONITORING_REGISTER>([\s\S]*?)<\/MONITORING_REGISTER>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1].trim()); } catch(e) { return null; }
+}
+
 function extractPatchFromReply(reply) {
   if (!reply) return null;
   const match = reply.match(/<PATCH>([\s\S]*?)<\/PATCH>/);
@@ -209,18 +233,44 @@ async function arcoSend() {
   const steps = extractStepsFromReply(reply);
   const patch = extractPatchFromReply(reply);
   const connections = extractConnectionsFromReply(reply);
+  const ccpRegister = extractCCPRegisterFromReply(reply);
+  const dependencyMap = extractDependencyMapFromReply(reply);
+  const monitoringRegister = extractMonitoringRegisterFromReply(reply);
+
   const displayReply = reply
     .replace(/<STEPS>[\s\S]*?<\/STEPS>/g, '')
     .replace(/<PATCH>[\s\S]*?<\/PATCH>/g, '')
     .replace(/<CONNECTIONS>[\s\S]*?<\/CONNECTIONS>/g, '')
+    .replace(/<CCP_REGISTER>[\s\S]*?<\/CCP_REGISTER>/g, '')
+    .replace(/<DEPENDENCY_MAP>[\s\S]*?<\/DEPENDENCY_MAP>/g, '')
+    .replace(/<MONITORING_REGISTER>[\s\S]*?<\/MONITORING_REGISTER>/g, '')
+    .replace(/```json[\s\S]*?```/g, '')
+    .replace(/\[\s*\{[\s\S]*?\}\s*\]/g, '')
     .trim();
 
-  appendMessage('assistant', displayReply, steps);
+  const nudge = steps && steps.length
+    ? `\n\n✓ **${steps.filter(s=>!['start','end'].includes(s.type)).length} steps ready** — press → PROMAP to send to canvas.`
+    : '';
 
-  if (steps) {
-    ARCO.extractedSteps = steps;
-    ARCO.extractedConnections = connections || [];
-    showExtractedSteps(steps);
+  appendMessage('assistant', (displayReply || '✓ Steps extracted.') + nudge, steps);
+
+  if (steps && steps.length) {
+    let anonCounter = 0;
+    const existingById = {};
+    (ARCO.extractedSteps || []).forEach(s => {
+      const key = s.stepId || `_anon_${s.type}_${s.name}_${anonCounter++}`;
+      existingById[key] = s;
+    });
+    steps.forEach(s => {
+      const key = s.stepId || `_anon_${s.type}_${s.name}_${anonCounter++}`;
+      existingById[key] = s;
+    });
+    ARCO.extractedSteps = Object.values(existingById);
+    if (connections && connections.length) ARCO.extractedConnections = connections;
+    if (ccpRegister) ARCO.ccpRegister = ccpRegister;
+    if (dependencyMap) ARCO.dependencyMap = dependencyMap;
+    if (monitoringRegister) ARCO.monitoringRegister = monitoringRegister;
+    showExtractedSteps(ARCO.extractedSteps);
   }
   if (patch) {
     ARCO.extractedPatch = patch;
@@ -230,15 +280,9 @@ async function arcoSend() {
 
 // ── SEND TO PROMAP ────────────────────────────────
 function sendToPromap() {
-  // Re-extract from last assistant message on every click
-  const lastAssistant = [...ARCO.messages].reverse().find(m => m.role === 'assistant');
-  if (lastAssistant) {
-    const steps = extractStepsFromReply(lastAssistant.content);
-    if (steps && steps.length) {
-      ARCO.extractedSteps = steps;
-      ARCO.extractedConnections = extractConnectionsFromReply(lastAssistant.content) || [];
-    }
-  }
+  // OBS-02 fix: trust ARCO.extractedSteps — already merged/deduped in arcoSend.
+  // Do NOT re-scan full message history here; that caused PROMAP count to diverge
+  // from what the panel shows (panel = source of truth for what user sees and confirms).
 
   if (!ARCO.extractedSteps || !ARCO.extractedSteps.length) {
     if (typeof notify === 'function') notify('No steps found — ask ARCŌ to build the process first.', 'error');
@@ -246,8 +290,19 @@ function sendToPromap() {
   }
 
   if (!window.State || !window.State.currentProcess) {
-    if (typeof notify === 'function') notify('Create or select a process in PROMAP first', 'error');
-    if (typeof switchToPromap === 'function') switchToPromap();
+    // N58: offer to create a new process rather than just erroring
+    const suggested = ARCO.extractedSteps && ARCO.extractedSteps[0]
+      ? ARCO.extractedSteps.find(s => s.type !== 'start' && s.type !== 'end')?.name || 'New Process'
+      : 'New Process';
+    if (typeof notify === 'function') notify('No process loaded — creating one now...', 'info');
+    if (typeof newProcess === 'function') {
+      // Pre-fill name from first extracted step context
+      setTimeout(() => {
+        const nameEl = document.getElementById('np-name');
+        if (nameEl) nameEl.value = suggested;
+        newProcess();
+      }, 100);
+    }
     return;
   }
 
@@ -291,9 +346,7 @@ function doInsertToPromap(replaceAll) {
     State.nodeCounter = 0;
   }
 
-  const startX = 80, startY = 80, GAP_X = 210;
-  let xPos = replaceAll ? startX : Math.max(...State.nodes.map(n => n.x || 0), startX - GAP_X) + GAP_X;
-  const addSequential = State.nodes.length === 0;
+  const START_X = 80, START_Y = 100, GAP_X = 260, GAP_Y = 160, COLS = 4;
   const insertStart = State.nodes.length;
   const idMap = {};
 
@@ -308,21 +361,22 @@ function doInsertToPromap(replaceAll) {
     return;
   }
 
-  stepsToInsert.forEach(step => {
+  stepsToInsert.forEach((step, i) => {
     State.nodeCounter++;
     const id = `N-${String(State.nodeCounter).padStart(3,'0')}`;
     const stepId = step.stepId || (step.type === 'start' || step.type === 'end' ? '' : id);
     if (step.stepId) idMap[step.stepId] = id;
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
     State.nodes.push({
       id, ...step,
-      x: xPos,
-      y: startY + (Math.random() * 40 - 20),
+      x: START_X + col * GAP_X,
+      y: START_Y + row * GAP_Y,
       stepId,
       level: step.level || 'L4',
       classifications: step.classifications || [],
       thresholds: step.thresholds || [],
     });
-    xPos += GAP_X;
   });
 
   const conns = ARCO.extractedConnections;
@@ -332,7 +386,8 @@ function doInsertToPromap(replaceAll) {
       const to   = idMap[c.to]   || c.to;
       if (from && to) State.connections.push({ id:'C-'+Date.now()+i, from, to, type:c.type||'sequence', label:c.label||'' });
     });
-  } else if (addSequential || replaceAll) {
+  } else {
+    // Auto-connect sequentially
     for (let i = 0; i < stepsToInsert.length - 1; i++) {
       const from = State.nodes[insertStart + i];
       const to   = State.nodes[insertStart + i + 1];
@@ -348,6 +403,10 @@ function doInsertToPromap(replaceAll) {
   });
 
   State.dirty = true;
+  // N39: audit entry for ARCŌ→PROMAP action
+  if (typeof bufferAudit === 'function') {
+    bufferAudit('modified', `ARCŌ sent ${stepsToInsert.length} step(s) to canvas (${replaceAll?'replace all':'append new'})`, { field:'nodes', from:replaceAll?0:insertStart, to:State.nodes.length }, 'ARCŌ');
+  }
   const empty = document.getElementById('empty-state');
   if (empty) empty.style.display = 'none';
   if (typeof renderCanvas === 'function') renderCanvas();
@@ -418,6 +477,10 @@ function showExtractedSteps(steps) {
   });
   if (!panel) return;
   const functional = steps.filter(s => !['start','end'].includes(s.type));
+  const ccps = (ARCO.ccpRegister || []).filter(c => c.stepId);
+  const deps = (ARCO.dependencyMap || []).filter(d => d.from && d.to);
+  const monitored = (ARCO.monitoringRegister || []).filter(m => m.stepId);
+
   panel.innerHTML = `
     <div class="arco-extracted-header">
       <span>${functional.length} steps extracted</span>
@@ -429,11 +492,26 @@ function showExtractedSteps(steps) {
           <span class="arco-step-num">${i+1}</span>
           <div class="arco-step-info">
             <div class="arco-step-name">${s.name}</div>
-            <div class="arco-step-meta">${s.type.toUpperCase()} · ${s.responsible||'—'} · ${s.frequency||'—'}</div>
+            <div class="arco-step-meta">${s.type.toUpperCase()} · ${s.department||s.responsible||'—'} · ${s.frequency||'—'}</div>
           </div>
           <span class="arco-step-type-badge" style="color:${typeColor(s.type)};">${s.type}</span>
         </div>`).join('')}
-    </div>`;
+    </div>
+    ${ccps.length ? `
+    <div style="margin:10px 14px 0;padding:8px 10px;background:rgba(255,107,53,.08);border:1px solid #ff6b35;border-radius:4px;">
+      <div style="font-size:10px;color:#ff6b35;letter-spacing:.08em;font-weight:600;margin-bottom:5px;">CCP REGISTER (${ccps.length})</div>
+      ${ccps.map(c=>`<div style="font-size:11px;color:var(--text1);padding:2px 0;">${c.stepId} — ${c.name} | ${c.parameter||'—'}: ${c.min||''}–${c.max||''} ${c.unit||''}</div>`).join('')}
+    </div>` : ''}
+    ${deps.length ? `
+    <div style="margin:8px 14px 0;padding:8px 10px;background:var(--amber-lo);border:1px solid var(--amber);border-radius:4px;">
+      <div style="font-size:10px;color:var(--amber);letter-spacing:.08em;font-weight:600;margin-bottom:5px;">DEPENDENCY MAP (${deps.length})</div>
+      ${deps.map(d=>`<div style="font-size:11px;color:var(--text1);padding:2px 0;">${d.from} → ${d.to}${d.reason?' | '+d.reason:''}</div>`).join('')}
+    </div>` : ''}
+    ${monitored.length ? `
+    <div style="margin:8px 14px 10px;padding:8px 10px;background:var(--violet-lo);border:1px solid var(--violet);border-radius:4px;">
+      <div style="font-size:10px;color:var(--violet);letter-spacing:.08em;font-weight:600;margin-bottom:5px;">MONITORING REGISTER (${monitored.length})</div>
+      ${monitored.map(m=>`<div style="font-size:11px;color:var(--text1);padding:2px 0;">${m.stepId} — ${m.name} | ${m.frequency||'—'} | ${m.monitoredBy||'—'}</div>`).join('')}
+    </div>` : ''}`;
   panel.style.display = 'block';
 }
 
@@ -456,6 +534,9 @@ function arcoReset() {
   ARCO.extractedSteps = [];
   ARCO.extractedConnections = [];
   ARCO.extractedPatch = null;
+  ARCO.ccpRegister = [];
+  ARCO.dependencyMap = [];
+  ARCO.monitoringRegister = [];
   const feed = document.getElementById('arco-feed');
   if (feed) feed.innerHTML = '';
   const extracted = document.getElementById('arco-extracted');
@@ -554,32 +635,36 @@ async function processArcoUpload(file) {
 
 // ── FLOAT PANEL ARCO ─────────────────────────────
 function appendFloatArcoMsg(role, text) {
-  const feed = document.getElementById('float-arco-feed');
-  if (!feed) return;
-  const div = document.createElement('div');
-  div.className = `arco-msg arco-${role}`;
-  const html = (text||'').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br/>');
-  div.innerHTML = `<div class="arco-bubble"><div class="arco-text" style="font-size:12px;">${html}</div></div>`;
-  feed.appendChild(div);
-  feed.scrollTop = feed.scrollHeight;
+  // N64: mirror to main feed — float and tab share same session
+  appendMessage(role, text);
+  // Also update float feed to show latest from main feed
+  const mainFeed = document.getElementById('arco-feed');
+  const floatFeed = document.getElementById('float-arco-feed');
+  if (floatFeed && mainFeed) {
+    floatFeed.innerHTML = mainFeed.innerHTML;
+    floatFeed.scrollTop = floatFeed.scrollHeight;
+  }
 }
 
 async function floatArcoSend() {
+  // N64: route through main arcoSend() so sessions are identical
   const input = document.getElementById('float-arco-input');
   if (!input) return;
   const msg = input.value.trim();
   if (!msg) return;
   input.value = '';
   autoResizeTextarea(input);
-  appendFloatArcoMsg('user', msg);
-  ARCO.messages.push({ role:'user', content: msg });
-  let reply;
-  try { reply = await callClaudeAPI(ARCO.messages); } catch(e) { reply = `Error: ${e.message}`; }
-  ARCO.messages.push({ role:'assistant', content: reply });
-  const steps = extractStepsFromReply(reply);
-  const display = reply.replace(/<STEPS>[\s\S]*?<\/STEPS>/g,'').replace(/<CONNECTIONS>[\s\S]*?<\/CONNECTIONS>/g,'').trim();
-  if (steps) { ARCO.extractedSteps = steps; ARCO.extractedConnections = extractConnectionsFromReply(reply)||[]; showExtractedSteps(steps); }
-  appendFloatArcoMsg('assistant', display + (steps ? `\n\n**${steps.filter(s=>!['start','end'].includes(s.type)).length} steps ready** — use → PROMAP button to send.` : ''));
+  // Inject into main input and send
+  const mainInput = document.getElementById('arco-input');
+  if (mainInput) mainInput.value = msg;
+  await arcoSend();
+  // Sync float feed
+  const mainFeed = document.getElementById('arco-feed');
+  const floatFeed = document.getElementById('float-arco-feed');
+  if (floatFeed && mainFeed) {
+    floatFeed.innerHTML = mainFeed.innerHTML;
+    floatFeed.scrollTop = floatFeed.scrollHeight;
+  }
 }
 
 function floatArcoKeydown(e) {

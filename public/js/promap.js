@@ -1,5 +1,7 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — PROMAP Engine v1.3
+   MERIDIAN — PROMAP Engine v1.6.11
+   Fixes: N51 layer filter; N76 save guard; N78 pedigree guard; N79 verified
+   N39/N62: Audit trail — field-level change capture, viewer panel
    ═══════════════════════════════════════════════ */
 
 window.State = {
@@ -16,7 +18,92 @@ window.State = {
   confirmCallback: null,
   confirmCancelCallback: null,
   lastNodeLevel: 'L4',
+  auditBuffer: [],   // N39: pending audit entries flushed on save
 };
+
+// ── AUDIT HELPERS ─────────────────────────────────
+function auditEntry(action, detail, changes, module) {
+  return { ts: new Date().toISOString(), action, module: module||'PROMAP', detail, changes: changes||null };
+}
+
+function bufferAudit(action, detail, changes, module) {
+  State.auditBuffer.push(auditEntry(action, detail, changes, module));
+}
+
+async function showAuditTrail() {
+  if (!State.currentProcess) { notify('No process loaded','error'); return; }
+  try {
+    const data = await api('GET', `/api/processes/${State.currentProcess.id}/audit`);
+    renderAuditPanel(data.auditLog || [], data.process.name);
+  } catch(e) { notify('Could not load audit trail','error'); }
+}
+
+function renderAuditPanel(log, processName) {
+  // Remove existing panel if open
+  const existing = document.getElementById('audit-panel');
+  if (existing) { existing.remove(); return; }
+
+  const panel = document.createElement('div');
+  panel.id = 'audit-panel';
+  panel.style.cssText = `
+    position:fixed;right:18px;top:110px;width:420px;max-height:calc(100vh - 130px);
+    background:var(--bg1);border:1px solid var(--border);border-radius:7px;
+    box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:300;display:flex;flex-direction:column;overflow:hidden;`;
+
+  const header = `
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div>
+        <span style="font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--text1);">AUDIT TRAIL</span>
+        <span style="font-size:11px;color:var(--text2);margin-left:8px;">${processName}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="hdr-btn" style="font-size:11px;padding:4px 10px;" onclick="exportAuditTrail()">EXPORT</button>
+        <span style="cursor:pointer;color:var(--text2);font-size:18px;" onclick="document.getElementById('audit-panel').remove()">×</span>
+      </div>
+    </div>`;
+
+  const entries = log.length ? [...log].reverse().map(e => {
+    const ts = new Date(e.ts);
+    const time = ts.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ' ' + ts.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const actionColor = {
+      created:'var(--teal)', modified:'var(--text1)', deleted:'var(--coral)',
+      published:'var(--green)', archived:'var(--text2)', evaluated:'var(--violet)'
+    }[e.action] || 'var(--text1)';
+    return `
+      <div style="padding:9px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;">
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:var(--text2);white-space:nowrap;">${time}</div>
+          <div style="font-size:9px;color:${actionColor};letter-spacing:.06em;text-transform:uppercase;margin-top:2px;">${e.action}</div>
+          <div style="font-size:9px;color:var(--text2);margin-top:1px;">${e.module}</div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text0);">${e.detail}</div>
+          ${e.changes ? `<div style="font-size:10px;color:var(--text2);margin-top:3px;">${e.changes.field}: <span style="color:var(--coral);">${e.changes.from??'—'}</span> → <span style="color:var(--teal);">${e.changes.to??'—'}</span></div>` : ''}
+        </div>
+      </div>`;
+  }).join('') : '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text2);">No audit entries yet.</div>';
+
+  panel.innerHTML = header + `<div style="overflow-y:auto;flex:1;">${entries}</div>`;
+  document.body.appendChild(panel);
+}
+
+async function exportAuditTrail() {
+  if (!State.currentProcess) return;
+  const data = await api('GET', `/api/processes/${State.currentProcess.id}/audit`);
+  const log = data.auditLog || [];
+  const lines = [
+    `AUDIT TRAIL — ${data.process.name}`,
+    `Generated: ${new Date().toLocaleString('en-GB')}`,
+    `${'─'.repeat(60)}`,
+    ...log.map(e => `[${e.ts}] ${e.action.toUpperCase()} | ${e.module} | ${e.detail}${e.changes?` | ${e.changes.field}: ${e.changes.from}→${e.changes.to}`:''}`)
+  ].join('\n');
+  const blob = new Blob([lines],{type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `AUDIT_${(State.currentProcess.processId||State.currentProcess.name).replace(/\s+/g,'_')}.txt`;
+  a.click();
+  notify('Audit trail exported','success');
+}
 
 const MAX_UNDO = 30;
 
@@ -119,9 +206,12 @@ async function saveProcess() {
     level: State.currentProcess.level,
     parentId: State.currentProcess.parentId || null,
     status: State.currentProcess.status || 'draft',
-    nodes: JSON.parse(JSON.stringify(State.nodes)),
-    connections: JSON.parse(JSON.stringify(State.connections)),
+    nodes: JSON.parse(JSON.stringify(State.nodes || [])),
+    connections: JSON.parse(JSON.stringify(State.connections || [])),
+    _auditModule: 'PROMAP',
+    _auditEntries: [...State.auditBuffer],
   };
+  State.auditBuffer = []; // flush buffer
   const saved = await api('PUT', `/api/processes/${State.currentProcess.id}`, saveData);
   State.currentProcess = saved;
   const idx = State.processes.findIndex(p => p.id === saved.id);
@@ -166,6 +256,7 @@ async function deleteProcess(id) {
 
 async function publishProcess() {
   if (!State.currentProcess) return;
+  bufferAudit('published', `Process "${State.currentProcess.name}" published`, { field:'status', from:'draft', to:'published' });
   State.currentProcess.status = 'published';
   await saveProcess(); updateHeader();
 }
@@ -178,11 +269,67 @@ function loadProcess(proc) {
   State.nodeCounter = State.nodes.reduce((max,n) => Math.max(max, parseInt(n.id.replace('N-',''))||0), 0);
   State.selectedNode = null; State.selectedConn = null;
   State.dirty = false; State.undoStack = [];
+  const needsLayout = State.nodes.length > 0 && State.nodes.some(n => !n.x && !n.y);
   document.getElementById('btn-undo').style.display = 'none';
   setTool('select');
   updateHeader(); updatePedigree();
-  renderCanvas(); renderProcessList(); renderPropsEmpty();
+  renderCanvas(); renderProcessList(); renderProcessPropsPanel();
   document.getElementById('empty-state').style.display = State.nodes.length ? 'none' : 'block';
+  if (needsLayout) setTimeout(() => autoLayout(), 80);
+  if (typeof MeridianBus !== 'undefined') MeridianBus.emit('promap:process-loaded', { process: State.currentProcess, nodes: State.nodes, connections: State.connections });
+}
+
+function renderProcessPropsPanel() {
+  if (!State.currentProcess) { renderPropsEmpty(); return; }
+  const p = State.currentProcess;
+  const LEVEL_OPTIONS = ['L1','L2','L3','L4','L5','L6','L7','L8'];
+  document.getElementById('props-body').innerHTML = `
+    <div style="font-size:11px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;">Process Properties</div>
+    <div class="field-group">
+      <label class="field-label">Process Name</label>
+      <input class="field-input" value="${esc(p.name||'')}" oninput="upProcess('name',this.value)" style="user-select:text;"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Process ID</label>
+      <input class="field-input" value="${esc(p.processId||'')}" oninput="upProcess('processId',this.value)" style="user-select:text;"/>
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Level</label>
+        <select class="field-select" onchange="upProcess('level',this.value)">
+          ${LEVEL_OPTIONS.map(l=>`<option ${p.level===l?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Status</label>
+        <select class="field-select" onchange="upProcess('status',this.value)">
+          <option ${p.status==='draft'?'selected':''}>draft</option>
+          <option ${p.status==='published'?'selected':''}>published</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Owner</label>
+      <input class="field-input" value="${esc(p.owner||'')}" oninput="upProcess('owner',this.value)" style="user-select:text;"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Description</label>
+      <textarea class="field-textarea" oninput="upProcess('description',this.value)" style="user-select:text;">${esc(p.description||'')}</textarea>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Function</label>
+      <input class="field-input" value="${esc(p.function||'')}" oninput="upProcess('function',this.value)" style="user-select:text;"/>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="hdr-btn success" style="width:100%;" onclick="saveProcess().then(()=>notify('Saved','success'))">SAVE PROCESS</button>
+    </div>`;
+}
+
+function upProcess(key, value) {
+  if (!State.currentProcess) return;
+  State.currentProcess[key] = value;
+  State.dirty = true;
+  updateHeader();
 }
 
 // ── PEDIGREE ──────────────────────────────────────
@@ -198,8 +345,15 @@ function updatePedigree() {
 }
 
 function buildPedigree(id) {
-  const crumbs = []; let cur = State.processes.find(p => p.id === id);
-  while(cur) { crumbs.unshift({id:cur.id, name:cur.name}); cur = cur.parentId ? State.processes.find(p=>p.id===cur.parentId) : null; }
+  const crumbs = [];
+  if (!id) return crumbs;
+  let cur = State.processes.find(p => p.id === id);
+  const seen = new Set();
+  while(cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    crumbs.unshift({id:cur.id, name:cur.name});
+    cur = cur.parentId ? State.processes.find(p=>p.id===cur.parentId) : null;
+  }
   return crumbs;
 }
 
@@ -214,12 +368,15 @@ function renderProcessList() {
   addBtn.innerHTML = `<button class="hdr-btn primary" style="width:100%;font-size:12px;" onclick="newProcess()">+ ADD PROCESS</button>`;
   el.appendChild(addBtn);
 
-  if (!State.processes.length) {
+  const active = State.processes.filter(p => p.status !== 'archived');
+  const archived = State.processes.filter(p => p.status === 'archived');
+  const published = State.processes.filter(p => p.status === 'published');
+
+  if (!active.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'padding:8px 14px;font-size:13px;color:var(--text2);';
     empty.textContent = 'No processes yet.';
     el.appendChild(empty);
-    return;
   }
 
   function renderItem(p, depth) {
@@ -232,14 +389,74 @@ function renderProcessList() {
           <div class="pi-name">${depth>0?'└ ':''}${p.name}</div>
           <div class="pi-meta">${p.processId||'—'} · ${p.level||'L2'} · ${p.function||'—'}</div>
         </div>
-        <span onclick="event.stopPropagation();confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
-          style="color:var(--text2);cursor:pointer;font-size:15px;padding:0 4px;flex-shrink:0;" title="Delete process">×</span>
+        <div style="display:flex;gap:2px;flex-shrink:0;">
+          <span onclick="event.stopPropagation();archiveProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
+            style="color:var(--text2);cursor:pointer;font-size:15px;padding:0 3px;" title="Archive process">×</span>
+          <span onclick="event.stopPropagation();confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
+            style="color:var(--coral);cursor:pointer;font-size:13px;padding:0 3px;" title="Permanently delete">🗑</span>
+        </div>
       </div>`;
     div.addEventListener('click', () => loadProcess(p));
     el.appendChild(div);
-    State.processes.filter(c => c.parentId === p.id).forEach(child => renderItem(child, depth+1));
+    active.filter(c => c.parentId === p.id).forEach(child => renderItem(child, depth+1));
   }
-  State.processes.filter(p => !p.parentId).forEach(p => renderItem(p, 0));
+  active.filter(p => !p.parentId).forEach(p => renderItem(p, 0));
+
+  // N73 — Archived processes section
+  if (archived.length) {
+    const archHdr = document.createElement('div');
+    archHdr.innerHTML = `<div class="sb-hr"></div><div class="sb-section" style="color:var(--text2);">Archived (${archived.length})</div>`;
+    el.appendChild(archHdr);
+    archived.forEach(p => {
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:6px 14px;display:flex;justify-content:space-between;align-items:center;opacity:.6;';
+      div.innerHTML = `
+        <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${p.name}</div>
+        <span onclick="restoreProcess('${p.id}');" style="font-size:11px;color:var(--teal);cursor:pointer;padding:0 4px;flex-shrink:0;" title="Restore">↺</span>
+        <span onclick="confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');" style="font-size:13px;color:var(--coral);cursor:pointer;padding:0 3px;flex-shrink:0;" title="Permanently delete">🗑</span>`;
+      el.appendChild(div);
+    });
+  }
+
+  // N70 — SOP register: published SOPs at bottom
+  if (published.length) {
+    const sopHdr = document.createElement('div');
+    sopHdr.innerHTML = `<div class="sb-hr"></div><div class="sb-section" style="color:var(--teal);">Published SOPs (${published.length})</div>`;
+    el.appendChild(sopHdr);
+    published.forEach(p => {
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:5px 14px;cursor:pointer;';
+      div.innerHTML = `<div style="font-size:11px;color:var(--teal);">${p.processId||'—'} · ${p.name}</div><div style="font-size:10px;color:var(--text2);">v${p.version||1} · Published</div>`;
+      div.addEventListener('click', () => loadProcess(p));
+      el.appendChild(div);
+    });
+  }
+}
+
+async function archiveProcess(id, name) {
+  // N71: × = archive not delete
+  const data = await api('GET', `/api/processes/${id}`);
+  if (!data) return;
+  await api('PUT', `/api/processes/${id}`, { ...data, status: 'archived' });
+  const idx = State.processes.findIndex(p => p.id === id);
+  if (idx >= 0) State.processes[idx].status = 'archived';
+  if (State.currentProcess?.id === id) {
+    State.currentProcess.status = 'archived';
+    updateHeader();
+  }
+  renderProcessList();
+  notify(`"${name}" archived`, 'info');
+}
+
+async function restoreProcess(id) {
+  // N73: restore archived process to draft
+  const data = await api('GET', `/api/processes/${id}`);
+  if (!data) return;
+  await api('PUT', `/api/processes/${id}`, { ...data, status: 'draft' });
+  const idx = State.processes.findIndex(p => p.id === id);
+  if (idx >= 0) State.processes[idx].status = 'draft';
+  renderProcessList();
+  notify('Process restored to draft', 'success');
 }
 
 // ── HEADER ────────────────────────────────────────
@@ -252,16 +469,31 @@ function updateHeader() {
     statusEl.textContent = (p.status||'DRAFT').toUpperCase();
     statusEl.className = 'status-badge '+(p.status==='published'?'status-published':'status-draft');
     statusEl.style.display = ''; versionEl.textContent = `v${p.version||1}`; versionEl.style.display = '';
-    ['btn-save','btn-publish','btn-export'].forEach(id => document.getElementById(id).style.display='');
+    ['btn-save','btn-publish','btn-export','btn-audit'].forEach(id => document.getElementById(id).style.display='');
   } else {
     statusEl.style.display='none'; versionEl.style.display='none';
-    ['btn-save','btn-publish','btn-export'].forEach(id => document.getElementById(id).style.display='none');
+    ['btn-save','btn-publish','btn-export','btn-audit'].forEach(id => document.getElementById(id).style.display='none');
   }
 }
 
 // ── CANVAS ────────────────────────────────────────
 function renderCanvas() {
-  document.getElementById('canvas').innerHTML = '';
+  const canvas = document.getElementById('canvas');
+  const svg = document.getElementById('canvas-svg');
+  canvas.innerHTML = '';
+
+  // Dynamically size canvas to fit all nodes — fixes C (connectors invisible beyond boundary)
+  if (State.nodes.length) {
+    const maxX = Math.max(...State.nodes.map(n => (n.x||0) + 300)) + 300;
+    const maxY = Math.max(...State.nodes.map(n => (n.y||0) + 200)) + 300;
+    canvas.style.width  = maxX + 'px';
+    canvas.style.height = maxY + 'px';
+    if (svg) { svg.style.width = maxX + 'px'; svg.style.height = maxY + 'px'; }
+  }
+
+  // Render nodes first so getConnGeometry/group containers can read real DOM
+  // dimensions immediately — fixes connectors appearing straight until a
+  // selection forces a re-render with correct measurements (item c)
   State.nodes.forEach(n => renderNode(n));
   renderConnections();
   applyTransform();
@@ -300,13 +532,15 @@ function renderNode(node) {
     </div>`;
 
   } else if (node.type==='decision') {
-    // ISO: diamond — rendered as rotated square with inner content
-    div.style.cssText = `left:${node.x}px;top:${node.y}px;width:120px;height:80px;transform:none;border-radius:4px;`;
+    // ISO: proper diamond — clip-path matches polygon so label never spills past edges
+    div.style.cssText = `left:${node.x}px;top:${node.y}px;width:160px;height:100px;background:transparent;border:none;clip-path:polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);`;
     div.innerHTML = `
-      <div style="position:absolute;inset:0;transform:rotate(45deg);background:var(--amber-lo);border:1.5px solid var(--amber);border-radius:4px;"></div>
-      <div style="position:relative;z-index:1;padding:10px 8px;text-align:center;display:flex;flex-direction:column;justify-content:center;height:100%;">
-        <div style="font-size:11px;color:var(--amber);letter-spacing:.06em;margin-bottom:2px;">DECISION</div>
-        <div style="font-size:12px;color:var(--text0);font-weight:500;line-height:1.3;">${node.name||'Decision'}</div>
+      <svg width="160" height="100" style="position:absolute;top:0;left:0;">
+        <polygon points="80,4 156,50 80,96 4,50" fill="var(--amber-lo)" stroke="var(--amber)" stroke-width="1.5"/>
+      </svg>
+      <div style="position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;padding:0 36px;text-align:center;">
+        <div style="font-size:10px;color:var(--amber);letter-spacing:.06em;font-weight:600;">DECISION</div>
+        <div style="font-size:11px;color:var(--text0);font-weight:500;line-height:1.25;margin-top:2px;max-width:88px;overflow:hidden;text-overflow:ellipsis;">${node.name||'Decision'}</div>
       </div>`;
 
   } else if (node.type==='system') {
@@ -370,6 +604,203 @@ function renderNode(node) {
   canvas.appendChild(div);
 }
 
+// ── CONNECTION GEOMETRY HELPERS ───────────────────
+
+// Get the two endpoints and path description for a connection (no SVG created)
+function getConnGeometry(conn) {
+  const fn = State.nodes.find(n=>n.id===conn.from);
+  const tn = State.nodes.find(n=>n.id===conn.to);
+  if (!fn||!tn) return null;
+  const fe = document.getElementById(`node-${conn.from}`);
+  const te = document.getElementById(`node-${conn.to}`);
+  const fw = (fe && fe.offsetWidth  > 0) ? fe.offsetWidth  : (['start','end'].includes(fn.type) ? 120 : 172);
+  const fh = (fe && fe.offsetHeight > 0) ? fe.offsetHeight : 80;
+  const tw = (te && te.offsetWidth  > 0) ? te.offsetWidth  : (['start','end'].includes(tn.type) ? 120 : 172);
+  const th = (te && te.offsetHeight > 0) ? te.offsetHeight : 80;
+  const GAP = 20;
+
+  // ── LOOP: top-centre → soft bezier arc above → top-centre ──
+  if (conn.type === 'loop') {
+    const lx1 = fn.x + fw/2, ly1 = fn.y;
+    const lx2 = tn.x + tw/2, ly2 = tn.y;
+    const loopY = Math.min(ly1, ly2) - 60;
+    const segments = [
+      {x1:lx1, y1:ly1, x2:lx1, y2:loopY},
+      {x1:lx1, y1:loopY, x2:lx2, y2:loopY},
+      {x1:lx2, y1:loopY, x2:lx2, y2:ly2},
+    ];
+    return { x1:lx1, y1:ly1, x2:lx2, y2:ly2, segments, isBack:true, isLoop:true, fn,tn,fw,fh,tw,th,GAP };
+  }
+
+  // Normal forward: right-centre → left-centre
+  const x1 = fn.x + fw, y1 = fn.y + fh/2;
+  const x2 = tn.x,      y2 = tn.y + th/2;
+
+  const isBack = x2 < x1 + GAP*2;
+
+  if (isBack) {
+    const isWrapDown = fn.y < tn.y - 20; // target is meaningfully lower row
+
+    if (isWrapDown) {
+      // Row-wrap: bottom-centre exit → clear below all nodes in path → top-centre entry
+      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;   // bottom-centre source
+      const ox2 = tn.x + tw/2, oy2 = tn.y;          // top-centre target
+      let maxBottom = Math.max(oy1, fn.y + fh);
+      State.nodes.forEach(n => {
+        if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+          const el = document.getElementById(`node-${n.id}`);
+          const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+          maxBottom = Math.max(maxBottom, (n.y||0) + nh);
+        }
+      });
+      const clearY = maxBottom + 35;
+      const segments = [
+        {x1:ox1, y1:oy1, x2:ox1, y2:clearY},
+        {x1:ox1, y1:clearY, x2:ox2, y2:clearY},
+        {x1:ox2, y1:clearY, x2:ox2, y2:oy2},
+      ];
+      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+
+    } else {
+      // Same-row back: right-centre exit → bezier arc above row → top-centre entry
+      // Use cubic bezier: exit right, curve up and left, enter top of target
+      const segments = [{x1, y1, x2:tn.x+tw/2, y2:tn.y}];
+      return { x1, y1, x2:tn.x+tw/2, y2:tn.y, segments, isBack:true, isSameRowBack:true, isWrapDown:false, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+    }
+  }
+
+  // Normal forward — bezier right→left
+  const segments = [{x1, y1, x2, y2}];
+  return { x1, y1, x2, y2, segments, isBack:false, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+}
+
+// Segment intersection (excluding endpoints)
+function segIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2) {
+  const dx1=ax2-ax1, dy1=ay2-ay1, dx2=bx2-bx1, dy2=by2-by1;
+  const denom = dx1*dy2 - dy1*dx2;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((bx1-ax1)*dy2-(by1-ay1)*dx2)/denom;
+  const u = ((bx1-ax1)*dy1-(by1-ay1)*dx1)/denom;
+  if (t>0.05&&t<0.95&&u>0.05&&u<0.95)
+    return { x: ax1+t*dx1, y: ay1+t*dy1 };
+  return null;
+}
+
+// Find all crossing points on connA's segments from connB's segments
+function findCrossings(geomA, geomB) {
+  const pts = [];
+  if (!geomA||!geomB) return pts;
+  for (const sa of geomA.segments) {
+    for (const sb of geomB.segments) {
+      const pt = segIntersect(sa.x1,sa.y1,sa.x2,sa.y2, sb.x1,sb.y1,sb.x2,sb.y2);
+      if (pt) pts.push({ ...pt, seg: sa });
+    }
+  }
+  return pts;
+}
+
+// ── GROUP CONTAINERS ─────────────────────────────
+// Draws bounded boxes in SVG for each L1/L2 process node that has children (by parentId match)
+// Also groups nodes sharing the same process-level parent visually
+function renderGroupContainers(svg) {
+  // Auto-derive groups from process list parentId hierarchy.
+  // If current process has a parentId → it belongs to a group (sibling processes share parent).
+  // On canvas: group = all nodes of current process, labelled by parent process name.
+  // If multiple child-processes exist under same parent, each gets its own container.
+  // Also: nodes with explicit groupId field still group (manual override).
+
+  const PAD = 36;       // minimum space between node edge and box wall on all sides
+  const HEADER_H = 36;  // header band — large enough title never overlaps first node
+  const MIN_DEPT_GAP = 20; // minimum gap between department boxes enforced here
+
+  const groups = {}; // key → { label, nodes[] }
+
+  // 1. Manual groupId on nodes (explicit override)
+  State.nodes.forEach(n => {
+    if (!n.groupId) return;
+    if (!groups[n.groupId]) groups[n.groupId] = { label: n.groupId, nodes: [] };
+    groups[n.groupId].nodes.push(n);
+  });
+
+  // 2. Auto-group: if current process has a parentId, wrap ALL canvas nodes
+  if (State.currentProcess && State.currentProcess.parentId) {
+    const parent = State.processes.find(p => p.id === State.currentProcess.parentId);
+    if (parent && State.nodes.length >= 1) {
+      const gid = '__parent_' + State.currentProcess.parentId;
+      if (!groups[gid]) groups[gid] = { label: parent.name, nodes: [] };
+      State.nodes.forEach(n => { if (!n.groupId) groups[gid].nodes.push(n); });
+    }
+  }
+
+  // 3. Auto-group by department field on nodes
+  State.nodes.forEach(n => {
+    if (!n.department) return;
+    const gid = '__dept_' + n.department;
+    if (!groups[gid]) groups[gid] = { label: n.department, nodes: [] };
+    groups[gid].nodes.push(n);
+  });
+
+  // Compute all boxes first, then check for overlaps and push apart
+  const boxes = [];
+  Object.values(groups).forEach(group => {
+    if (group.nodes.length < 2) return;
+    let minX = Infinity, minY = Infinity, maxRight = -Infinity, maxBottom = -Infinity;
+    group.nodes.forEach(n => {
+      const el = document.getElementById(`node-${n.id}`);
+      const w = (el && el.offsetWidth)  ? el.offsetWidth  : 200;
+      const h = (el && el.offsetHeight) ? el.offsetHeight : 90;
+      const nx = n.x || 0, ny = n.y || 0;
+      minX = Math.min(minX, nx);
+      minY = Math.min(minY, ny);
+      maxRight  = Math.max(maxRight,  nx + w);
+      maxBottom = Math.max(maxBottom, ny + h);
+    });
+    boxes.push({
+      label: group.label,
+      x: minX - PAD,
+      y: minY - PAD - HEADER_H,
+      w: (maxRight - minX) + PAD * 2,
+      h: (maxBottom - minY) + PAD * 2 + HEADER_H,
+    });
+  });
+
+  // Draw all boxes
+  boxes.forEach(box => {
+    const { x, y, w, h, label } = box;
+
+    // Outer box
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', x); rect.setAttribute('y', y);
+    rect.setAttribute('width', w); rect.setAttribute('height', h);
+    rect.setAttribute('rx', '8'); rect.setAttribute('ry', '8');
+    rect.setAttribute('fill', 'rgba(20,28,44,0.5)');
+    rect.setAttribute('stroke', '#3e5078');
+    rect.setAttribute('stroke-width', '1.5');
+    rect.setAttribute('stroke-dasharray', '7 3');
+    svg.appendChild(rect);
+
+    // Header band — sits fully above first node (HEADER_H reserved in layout)
+    const hdr = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    hdr.setAttribute('x', x); hdr.setAttribute('y', y);
+    hdr.setAttribute('width', w); hdr.setAttribute('height', HEADER_H);
+    hdr.setAttribute('rx', '8'); hdr.setAttribute('ry', '8');
+    hdr.setAttribute('fill', 'rgba(46,60,88,0.75)');
+    svg.appendChild(hdr);
+
+    // Label — vertically centred in header band
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x', x + 14);
+    lbl.setAttribute('y', y + HEADER_H/2 + 4); // centred in header band
+    lbl.setAttribute('font-size', '11');
+    lbl.setAttribute('font-family', 'IBM Plex Mono, monospace');
+    lbl.setAttribute('font-weight', '600');
+    lbl.setAttribute('letter-spacing', '0.1em');
+    lbl.setAttribute('fill', '#9aaac8');
+    lbl.textContent = (label || '').toUpperCase();
+    svg.appendChild(lbl);
+  });
+}
+
 function renderConnections() {
   const svg = document.getElementById('canvas-svg');
   svg.innerHTML = '';
@@ -384,7 +815,28 @@ function renderConnections() {
     m.appendChild(p); defs.appendChild(m);
   });
   svg.appendChild(defs);
-  State.connections.forEach(c => drawConnection(c,svg));
+
+  // ── GROUP CONTAINERS — bounded boxes for L1/L2 process groups ──
+  renderGroupContainers(svg);
+
+  // Pre-compute geometry for all connections
+  const geoms = State.connections.map(c => ({ conn:c, geom: getConnGeometry(c) }));
+
+  // For each connection, find crossings with all later connections (avoid duplicates)
+  const crossingMap = new Map(); // conn.id → [crossing points]
+  for (let i=0; i<geoms.length; i++) {
+    for (let j=i+1; j<geoms.length; j++) {
+      const pts = findCrossings(geoms[i].geom, geoms[j].geom);
+      if (pts.length) {
+        // Bridge on the LATER connection (j) — it hops over the earlier one
+        if (!crossingMap.has(geoms[j].conn.id)) crossingMap.set(geoms[j].conn.id, []);
+        crossingMap.get(geoms[j].conn.id).push(...pts);
+      }
+    }
+  }
+
+  geoms.forEach(({ conn, geom }) => drawConnection(conn, svg, geom, crossingMap.get(conn.id)||[]));
+
   if (State.connectingFrom && State.connectMouse) {
     const line = document.createElementNS('http://www.w3.org/2000/svg','line');
     line.setAttribute('x1',State.connectingFrom.x); line.setAttribute('y1',State.connectingFrom.y);
@@ -394,43 +846,97 @@ function renderConnections() {
   }
 }
 
-function drawConnection(conn, svg) {
-  const fn = State.nodes.find(n=>n.id===conn.from), tn = State.nodes.find(n=>n.id===conn.to);
-  if (!fn||!tn) return;
-
-  // Use DOM dimensions if available, fall back to fixed estimates (fixes BUG-09 — off-screen nodes)
-  const fe = document.getElementById(`node-${conn.from}`);
-  const te = document.getElementById(`node-${conn.to}`);
-  const fw = (fe && fe.offsetWidth  > 0) ? fe.offsetWidth  : (['start','end'].includes(fn.type) ? 110 : 170);
-  const fh = (fe && fe.offsetHeight > 0) ? fe.offsetHeight : 70;
-  const tw = (te && te.offsetWidth  > 0) ? te.offsetWidth  : (['start','end'].includes(tn.type) ? 110 : 170);
-  const th = (te && te.offsetHeight > 0) ? te.offsetHeight : 70;
+function drawConnection(conn, svg, geom, crossings) {
+  if (!geom) return;
+  const { x1,y1,x2,y2, isBack, isLoop, isSameRowBack, isWrapDown, fn,tn,fw,fh,tw,th,GAP } = geom;
 
   const styleMap = { sequence:'seq', dependency:'dep', loop:'loop', yes:'yes', no:'no' };
   const cs = CONN_STYLES[conn.type]||CONN_STYLES.sequence;
   const markerId = 'arr-'+(styleMap[conn.type]||'seq');
 
-  if (conn.type==='loop') {
-    const x1=fn.x+fw/2, y1=fn.y, x2=tn.x+tw/2, y2=tn.y, loopY=Math.min(y1,y2)-50;
+  // CON-04: immediate upstream = red, immediate downstream = bright blue, path = teal/coral
+  const isHighlighted = conn._highlighted;
+  const isImmediate = conn._immediateHighlight;
+  const strokeColor = isImmediate==='downstream' ? '#4d79ff'
+    : isImmediate==='upstream' ? '#ff4d4d'
+    : isHighlighted==='forward' ? 'var(--teal)'
+    : isHighlighted==='backward' ? 'var(--coral)'
+    : cs.color;
+  const strokeWidth = isImmediate ? '2.5' : isHighlighted ? '2' : '1.5';
+
+  function drawPath(d, markerEnd) {
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d',`M${x1} ${y1} C${x1} ${loopY} ${x2} ${loopY} ${x2} ${y2}`);
-    path.setAttribute('stroke',cs.color); path.setAttribute('stroke-width','1.5');
-    path.setAttribute('stroke-dasharray',cs.dash||''); path.setAttribute('fill','none');
-    path.setAttribute('marker-end',`url(#${markerId})`);
-    path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', strokeColor);
+    path.setAttribute('stroke-width', strokeWidth);
+    if (cs.dash) path.setAttribute('stroke-dasharray', cs.dash);
+    path.setAttribute('fill','none');
+    if (markerEnd !== false) path.setAttribute('marker-end',`url(#${markerId})`);
+    path.style.cursor='pointer';
+    path.addEventListener('click',()=>selectConnection(conn));
     svg.appendChild(path);
-    addSvgLabel(svg,(x1+x2)/2,loopY-8,'loop-back',cs.color); return;
   }
-  const x1=fn.x+fw, y1=fn.y+fh/2, x2=tn.x, y2=tn.y+th/2, mx=(x1+x2)/2;
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d',`M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`);
-  path.setAttribute('stroke',cs.color); path.setAttribute('stroke-width','1.5');
-  if (cs.dash) path.setAttribute('stroke-dasharray',cs.dash);
-  path.setAttribute('fill','none'); path.setAttribute('marker-end',`url(#${markerId})`);
-  path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
-  svg.appendChild(path);
+
+  // ── LOOP: soft bezier arc above, top→top ──
+  if (isLoop) {
+    const lx1=fn.x+fw/2, ly1=fn.y;
+    const lx2=tn.x+tw/2, ly2=tn.y;
+    const loopY = Math.min(ly1,ly2) - 60;
+    // Cubic bezier: start top, curve high above, arrive top of target
+    const d = `M${lx1} ${ly1} C${lx1} ${loopY} ${lx2} ${loopY} ${lx2} ${ly2}`;
+    drawPath(d);
+    addSvgLabel(svg,(lx1+lx2)/2, loopY-10, 'loop-back', cs.color);
+    return;
+  }
+
+  // ── ROW-WRAP: bottom-centre → orthogonal rounded → top-centre ──
+  if (isWrapDown) {
+    const ox1 = fn.x + fw/2, oy1 = fn.y + fh;
+    const ox2 = tn.x + tw/2, oy2 = tn.y;
+    let maxBottom = oy1;
+    State.nodes.forEach(n => {
+      if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+        const el = document.getElementById(`node-${n.id}`);
+        const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+        maxBottom = Math.max(maxBottom, (n.y||0) + nh);
+      }
+    });
+    const clearY = maxBottom + 35;
+    const R = 12; // corner radius
+    // Orthogonal path with rounded corners using quadratic bezier at each bend
+    const d = `M${ox1} ${oy1}
+      L${ox1} ${clearY - R} Q${ox1} ${clearY} ${ox1 + R} ${clearY}
+      L${ox2 - R} ${clearY} Q${ox2} ${clearY} ${ox2} ${clearY - R}
+      L${ox2} ${oy2 + R} Q${ox2} ${oy2} ${ox2 + R} ${oy2}`.replace(/\n\s+/g,' ');
+    drawPath(d);
+    return;
+  }
+
+  // ── SAME-ROW BACK: right-centre → orthogonal rounded arc above → top-centre ──
+  if (isSameRowBack) {
+    const ex = fn.x + fw,    ey = fn.y + fh/2;
+    const tx = tn.x + tw/2,  ty = tn.y;
+    const arcY = Math.min(fn.y, tn.y) - 50;
+    const R = 12;
+    // Orthogonal: right → up → left → down into top of target, rounded corners
+    const d = `M${ex} ${ey}
+      L${ex + R} ${ey} Q${ex + R*2} ${ey} ${ex + R*2} ${ey - R}
+      L${ex + R*2} ${arcY + R} Q${ex + R*2} ${arcY} ${ex + R} ${arcY}
+      L${tx + R} ${arcY} Q${tx} ${arcY} ${tx} ${arcY + R}
+      L${tx} ${ty}`.replace(/\n\s+/g,' ');
+    drawPath(d);
+    const lbl = conn.label||cs.label;
+    if (lbl) addSvgLabel(svg,(ex+tx)/2, arcY-8, lbl, cs.color);
+    return;
+  }
+
+  // ── NORMAL FORWARD: right-centre → soft bezier → left-centre ──
+  const dx = Math.abs(x2-x1);
+  const cx = dx > 80 ? dx*0.45 : 60;
+  const dStr = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
+  drawPath(dStr);
   const lbl = conn.label||cs.label;
-  if (lbl) addSvgLabel(svg,mx,(y1+y2)/2-8,lbl,cs.color);
+  if (lbl) addSvgLabel(svg,(x1+x2)/2,(y1+y2)/2-8, lbl, cs.color);
 }
 
 function addSvgLabel(svg,x,y,text,color) {
@@ -471,6 +977,7 @@ function addNode(type, x, y) {
   State.nodes.push(node);
   State.lastNodeLevel = node.level;
   State.dirty = true;
+  bufferAudit('modified', `Step added: "${node.name}" [${type}]`, { field:'node', from:null, to:node.name });
   document.getElementById('empty-state').style.display = 'none';
   renderNode(node); renderConnections(); selectNode(node);
 }
@@ -513,8 +1020,63 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
-  if (State.dragging) { State.dirty=true; State.dragging=null; }
-  State.panning=false;
+  if (State.dragging) {
+    State.dirty = true;
+    State.dragging = null;
+    // LAY-03/07: reflow department bands after drag — box follows nodes, no clamping
+    reflowDepartmentBands();
+    renderCanvas();
+  }
+  State.panning = false;
+}
+
+function reflowDepartmentBands() {
+  const deptGroups = {};
+  State.nodes.forEach(n => {
+    if (!n.department || !n.department.trim()) return;
+    if (!deptGroups[n.department]) deptGroups[n.department] = [];
+    deptGroups[n.department].push(n);
+  });
+
+  const NODE_H = 100, NODE_W = 200;
+  const PAD = 36, HEADER_H = 36;  // matches renderGroupContainers
+  const VISUAL_GAP = 24;           // minimum gap between dept box edges
+
+  const bands = Object.entries(deptGroups).map(([dept, nodes]) => {
+    const xs = nodes.map(n => n.x || 0);
+    const ys = nodes.map(n => n.y || 0);
+    return {
+      dept, nodes,
+      left:   Math.min(...xs) - PAD,
+      right:  Math.max(...xs) + NODE_W + PAD,
+      top:    Math.min(...ys) - PAD - HEADER_H,
+      bottom: Math.max(...ys) + NODE_H + PAD,
+    };
+  });
+
+  let changed = true, passes = 0;
+  while (changed && passes++ < 20) {
+    changed = false;
+    for (let i = 0; i < bands.length; i++) {
+      for (let j = i+1; j < bands.length; j++) {
+        const a = bands[i], b = bands[j];
+        const overlapX = a.left < b.right + VISUAL_GAP && a.right + VISUAL_GAP > b.left;
+        const overlapY = a.top  < b.bottom + VISUAL_GAP && a.bottom + VISUAL_GAP > b.top;
+        if (overlapX && overlapY) {
+          const pushDown  = a.bottom + VISUAL_GAP - b.top;
+          const pushRight = a.right  + VISUAL_GAP - b.left;
+          if (pushDown <= pushRight) {
+            b.nodes.forEach(n => { n.y = (n.y||0) + pushDown; });
+            b.top += pushDown; b.bottom += pushDown;
+          } else {
+            b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
+            b.left += pushRight; b.right += pushRight;
+          }
+          changed = true;
+        }
+      }
+    }
+  }
 }
 
 function applyTransform() {
@@ -569,7 +1131,54 @@ function clearSelection() {
 }
 
 function renderPropsEmpty() {
-  document.getElementById('props-body').innerHTML='<div style="font-size:13px;color:var(--text2);padding:8px 0;">Select a step to edit its properties.</div>';
+  if (State.currentProcess) {
+    const p = State.currentProcess;
+    document.getElementById('props-body').innerHTML = `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:10px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Process Properties</div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Process Name</label>
+        <input class="field-input" value="${esc(p.name||'')}" oninput="updateProcessProp('name',this.value)" style="user-select:text;"/>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Process ID</label>
+        <input class="field-input" value="${esc(p.processId||'')}" oninput="updateProcessProp('processId',this.value)" style="user-select:text;"/>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Level</label>
+        <select class="field-select" onchange="updateProcessProp('level',this.value)">
+          ${['L1','L2','L3','L4','L5','L6','L7','L8'].map(l=>`<option ${p.level===l?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Owner</label>
+        <input class="field-input" value="${esc(p.owner||'')}" oninput="updateProcessProp('owner',this.value)" style="user-select:text;"/>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Function</label>
+        <input class="field-input" value="${esc(p.function||'')}" oninput="updateProcessProp('function',this.value)" style="user-select:text;"/>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Description</label>
+        <textarea class="field-textarea" oninput="updateProcessProp('description',this.value)" style="user-select:text;">${esc(p.description||'')}</textarea>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Status</label>
+        <div style="font-size:13px;color:${p.status==='published'?'var(--teal)':'var(--text1)'};">${p.status||'draft'}</div>
+      </div>
+      <button class="hdr-btn primary" style="width:100%;margin-top:8px;" onclick="saveProcess().then(()=>notify('Process saved','success'))">Save Process</button>`;
+  } else {
+    document.getElementById('props-body').innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0;">Select or create a process to begin.</div>';
+  }
+}
+
+function updateProcessProp(key, value) {
+  if (!State.currentProcess) return;
+  State.currentProcess[key] = value;
+  State.dirty = true;
+  // Update header display
+  if (key === 'name') updateHeader();
 }
 
 // ── PROPERTIES PANEL ──────────────────────────────
@@ -742,6 +1351,17 @@ function renderPropsPanel(node) {
     </div>
 
     <div class="field-group">
+      <label class="field-label">Department</label>
+      <input class="field-input" value="${esc(node.department||'')}" placeholder="e.g. Finance, Sales, Warehouse" oninput="upNode('${node.id}','department',this.value);renderCanvas();" style="user-select:text;"/>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Group Container</label>
+      <input class="field-input" value="${esc(node.groupId||'')}" placeholder="e.g. Customer Intake" oninput="upNode('${node.id}','groupId',this.value);renderCanvas();" style="user-select:text;" title="Assign to a named group container — shared name draws a bounded box"/>
+      <div style="font-size:10px;color:var(--text2);margin-top:3px;">Nodes sharing a group name are enclosed in a bounded box</div>
+    </div>
+
+    <div class="field-group">
       <label class="field-label">Notes</label>
       <textarea class="field-textarea" oninput="upNode('${node.id}','notes',this.value)" style="user-select:text;" placeholder="Additional notes...">${esc(node.notes||'')}</textarea>
     </div>
@@ -770,8 +1390,14 @@ function renderConnPropsPanel(conn) {
 // ── UPDATE HELPERS ────────────────────────────────
 function upNode(id, key, value) {
   const node=State.nodes.find(n=>n.id===id); if (!node) return;
+  const oldVal = node[key];
   node[key]=value; if (key==='level') State.lastNodeLevel=value;
   State.dirty=true;
+  // N39: buffer field-level audit entry for meaningful fields only
+  const auditFields = ['name','type','responsible','accountable','classifications','monitoring','frequency','recordRequired','retentionPeriod','department'];
+  if (auditFields.includes(key) && String(oldVal) !== String(value)) {
+    bufferAudit('modified', `"${node.name}" — ${key} changed`, { field:key, from:oldVal??'—', to:value??'—' });
+  }
   const el=document.getElementById(`node-${id}`); if (el) el.remove();
   renderNode(node); renderConnections();
   const el2=document.getElementById(`node-${id}`);
@@ -879,12 +1505,14 @@ function executeDelete() {
   pushUndo();
   if (State.selectedNode) {
     const id=State.selectedNode.id;
+    bufferAudit('deleted', `Step deleted: "${State.selectedNode.name}" [${State.selectedNode.type}]`, { field:'node', from:State.selectedNode.name, to:null });
     State.nodes=State.nodes.filter(n=>n.id!==id);
     State.connections=State.connections.filter(c=>c.from!==id&&c.to!==id);
     State.dirty=true; clearSelection(); renderCanvas();
     if (!State.nodes.length) document.getElementById('empty-state').style.display='block';
     notify('Step deleted','info');
   } else if (State.selectedConn) {
+    bufferAudit('modified', `Connector deleted: ${State.selectedConn.type}`, { field:'connection', from:State.selectedConn.id, to:null });
     State.connections=State.connections.filter(c=>c.id!==State.selectedConn.id);
     State.dirty=true; clearSelection(); renderConnections();
     notify('Connection deleted','info');
@@ -913,22 +1541,151 @@ function fitView() {
 function autoLayout() {
   if (!State.nodes.length) return;
   pushUndo();
-  const GAP_X=210,GAP_Y=140,START_X=80,START_Y=80;
-  const visited=new Set(), inDegree={};
-  State.nodes.forEach(n=>inDegree[n.id]=0);
-  State.connections.forEach(c=>{if(inDegree[c.to]!==undefined)inDegree[c.to]++;});
-  const queue=[...State.nodes.filter(n=>inDegree[n.id]===0)];
-  const colMap={}; let col=0;
-  while(queue.length) {
-    const node=queue.shift(); if(visited.has(node.id)) continue;
-    visited.add(node.id); if(!colMap[col])colMap[col]=[];
-    colMap[col].push(node);
-    State.connections.filter(c=>c.from===node.id).map(c=>State.nodes.find(n=>n.id===c.to)).filter(Boolean).forEach(child=>{if(!visited.has(child.id))queue.push(child);});
-    col++;
+
+  const GAP_X    = 260;
+  const GAP_Y    = 160;
+  const START_X  = 80;
+  const START_Y  = 80;
+  const MAX_COLS = 4;
+  const NODE_W   = 200;
+  const NODE_H   = 100;
+  const CONTAINER_PAD = 40 + 28;
+  const VISUAL_GAP    = 30;
+  const BAND_GAP      = (CONTAINER_PAD * 2) + VISUAL_GAP;
+
+  // Sequential layout within a group — step order primary, BFS depth secondary
+  // Nodes laid left-to-right in sequence, wrap after MAX_COLS
+  function layoutGroup(nodes, originX, originY) {
+    if (!nodes.length) return originY;
+    const HEADER_H = 36; // reserve space for dept label above first node — matches renderGroupContainers
+    const effectiveOriginY = originY + HEADER_H; // first node starts below header
+
+    const ids = new Set(nodes.map(n => n.id));
+    const hasConns = State.connections.some(c => ids.has(c.from) && ids.has(c.to));
+    let ordered;
+
+    if (hasConns) {
+      const visited = new Set();
+      const roots = nodes.filter(n => !State.connections.some(c => c.to === n.id && ids.has(c.from)));
+      const queue = (roots.length ? roots : [nodes[0]]).map(n => n.id);
+      ordered = [];
+      while (queue.length) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const node = nodes.find(n => n.id === id);
+        if (node) ordered.push(node);
+        State.connections.filter(c => c.from === id && ids.has(c.to)).forEach(c => queue.push(c.to));
+      }
+      nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
+    } else {
+      ordered = [...nodes];
+    }
+
+    // Place sequentially
+    ordered.forEach((n, i) => {
+      const col = i % MAX_COLS;
+      const row = Math.floor(i / MAX_COLS);
+      n.x = originX + col * GAP_X;
+      n.y = effectiveOriginY + row * GAP_Y;
+    });
+
+    // Collision pass — use real DOM heights where available
+    let changed = true, passes = 0;
+    while (changed && passes++ < 30) {
+      changed = false;
+      for (let i = 0; i < ordered.length; i++) {
+        for (let j = i + 1; j < ordered.length; j++) {
+          const a = ordered[i], b = ordered[j];
+          const elA = document.getElementById(`node-${a.id}`);
+          const elB = document.getElementById(`node-${b.id}`);
+          const aW = (elA && elA.offsetWidth)  ? elA.offsetWidth  : NODE_W;
+          const aH = (elA && elA.offsetHeight) ? elA.offsetHeight : NODE_H;
+          const bW = (elB && elB.offsetWidth)  ? elB.offsetWidth  : NODE_W;
+          const bH = (elB && elB.offsetHeight) ? elB.offsetHeight : NODE_H;
+          const MARGIN = 24;
+          const overlapX = a.x < b.x + bW + MARGIN && a.x + aW + MARGIN > b.x;
+          const overlapY = a.y < b.y + bH + MARGIN && a.y + aH + MARGIN > b.y;
+          if (overlapX && overlapY) {
+            b.y = a.y + aH + MARGIN;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    const maxBottom = Math.max(...ordered.map(n => {
+      const el = document.getElementById(`node-${n.id}`);
+      return (n.y||0) + ((el && el.offsetHeight) ? el.offsetHeight : NODE_H);
+    }));
+    return maxBottom;
   }
-  State.nodes.filter(n=>!visited.has(n.id)).forEach(n=>{if(!colMap[col])colMap[col]=[];colMap[col].push(n);col++;});
-  Object.entries(colMap).forEach(([c,nodes])=>nodes.forEach((n,r)=>{n.x=START_X+parseInt(c)*GAP_X;n.y=START_Y+r*GAP_Y;}));
-  State.dirty=true; renderCanvas(); notify('Auto-layout applied','success');
+
+  // Group by department
+  const deptGroups = {};
+  let undeptNodes = [];
+  State.nodes.forEach(n => {
+    if (n.department && n.department.trim()) {
+      if (!deptGroups[n.department]) deptGroups[n.department] = [];
+      deptGroups[n.department].push(n);
+    } else {
+      undeptNodes.push(n);
+    }
+  });
+
+  const deptKeys = Object.keys(deptGroups);
+  const HORIZ_THRESHOLD = 3;
+  const STEP_THRESHOLD  = 5;
+  const useHorizontal = deptKeys.length >= 2 && deptKeys.length <= HORIZ_THRESHOLD &&
+    deptKeys.every(d => deptGroups[d].length <= STEP_THRESHOLD);
+
+  if (deptKeys.length >= 2) {
+    if (useHorizontal) {
+      // Horizontal bands — departments side by side
+      let x = START_X;
+      deptKeys.forEach(dept => {
+        const nodes = deptGroups[dept];
+        const bottom = layoutGroup(nodes, x, START_Y);
+        const maxRight = Math.max(...nodes.map(n => n.x)) + NODE_W;
+        x = maxRight + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
+    } else {
+      // Vertical bands — departments stacked
+      let y = START_Y;
+      deptKeys.forEach(dept => {
+        y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
+    }
+  } else {
+    // Single group or no departments — sequential left-to-right
+    layoutGroup(State.nodes, START_X, START_Y);
+  }
+
+  // Store persistent dept bounds in State — prevents retraction bug
+  State.deptBounds = computeDeptBounds();
+
+  State.dirty = true;
+  renderCanvas();
+  notify('Layout applied', 'success');
+}
+
+// Compute and store department bounding boxes — persistent, not recomputed from scratch each render
+function computeDeptBounds() {
+  const PAD = 40, HEADER_H = 28, NODE_W = 200, NODE_H = 100;
+  const bounds = {};
+  State.nodes.forEach(n => {
+    if (!n.department || !n.department.trim()) return;
+    if (!bounds[n.department]) bounds[n.department] = { left:Infinity, top:Infinity, right:-Infinity, bottom:-Infinity, nodes:[] };
+    const b = bounds[n.department];
+    b.nodes.push(n);
+    b.left   = Math.min(b.left,   (n.x||0) - PAD);
+    b.top    = Math.min(b.top,    (n.y||0) - PAD - HEADER_H);
+    b.right  = Math.max(b.right,  (n.x||0) + NODE_W + PAD);
+    b.bottom = Math.max(b.bottom, (n.y||0) + NODE_H + PAD);
+  });
+  return bounds;
 }
 
 // ── EXPORT SOP ────────────────────────────────────
@@ -1096,9 +1853,10 @@ let activeLayerFilter = 'all';
 
 function setLayerFilter(key) {
   activeLayerFilter = key;
-  document.querySelectorAll('.lf-btn').forEach(b => b.classList.remove('active'));
-  const btn = [...document.querySelectorAll('.lf-btn')].find(b => b.getAttribute('onclick')?.includes(`'${key}'`));
-  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.lf-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.dataset.filter === key) b.classList.add('active');
+  });
   applyLayerFilter();
 }
 
@@ -1133,7 +1891,14 @@ function toggleFloatPanel(name) {
   if (!visible && name === 'arco') {
     const feed = document.getElementById('float-arco-feed');
     if (feed && feed.children.length === 0 && typeof appendFloatArcoMsg === 'function') {
-      appendFloatArcoMsg('assistant', `Hello. I'm **ARCŌ** — ask me about this process or describe steps to add.`);
+      // N64: sync float feed from main feed on open
+      const mainFeed = document.getElementById('arco-feed');
+      const floatFeed = document.getElementById('float-arco-feed');
+      if (floatFeed && mainFeed) {
+        if (mainFeed.children.length === 0 && typeof arcoGreet === 'function') arcoGreet();
+        floatFeed.innerHTML = mainFeed.innerHTML;
+        floatFeed.scrollTop = floatFeed.scrollHeight;
+      }
     }
   }
 }
@@ -1190,3 +1955,93 @@ function applyGlossary(text) {
   MERIDIAN_GLOSSARY.forEach(({ ext, mer }) => { out = out.replace(ext, mer); });
   return out;
 }
+
+// ── PATH HIGHLIGHTING (BUG-20 restore) ───────────
+function getForwardPath(nodeId) {
+  const visited = new Set();
+  const queue = [nodeId];
+  while (queue.length) {
+    const id = queue.shift();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    State.connections.filter(c => c.from === id).forEach(c => queue.push(c.to));
+  }
+  visited.delete(nodeId);
+  return visited;
+}
+
+function getBackwardPath(nodeId) {
+  const visited = new Set();
+  const queue = [nodeId];
+  while (queue.length) {
+    const id = queue.shift();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    State.connections.filter(c => c.to === id).forEach(c => queue.push(c.from));
+  }
+  visited.delete(nodeId);
+  return visited;
+}
+
+function highlightPath(nodeId) {
+  clearPathHighlight();
+  if (!nodeId) return;
+  const forward  = getForwardPath(nodeId);
+  const backward = getBackwardPath(nodeId);
+
+  State.nodes.forEach(n => {
+    const el = document.getElementById(`node-${n.id}`);
+    if (!el) return;
+    if (n.id === nodeId || forward.has(n.id) || backward.has(n.id)) {
+      el.style.opacity = '1'; el.style.filter = '';
+    } else {
+      el.style.opacity = '0.2'; el.style.filter = 'grayscale(1)';
+    }
+  });
+
+  // CON-04: immediate upstream = red (#ff4d4d), immediate downstream = bright blue (#4d79ff)
+  // Path = teal/coral; rest = default
+  const immediateDown = State.connections.filter(c => c.from === nodeId);
+  const immediateUp   = State.connections.filter(c => c.to   === nodeId);
+  const immediateDownIds = new Set(immediateDown.map(c => c.id));
+  const immediateUpIds   = new Set(immediateUp.map(c => c.id));
+
+  State.connections.forEach(c => {
+    c._immediateHighlight = immediateDownIds.has(c.id) ? 'downstream'
+      : immediateUpIds.has(c.id) ? 'upstream' : null;
+    if (!c._immediateHighlight) {
+      if (forward.has(c.to) && (c.from === nodeId || forward.has(c.from))) c._highlighted = 'forward';
+      else if (backward.has(c.from) && (c.to === nodeId || backward.has(c.to))) c._highlighted = 'backward';
+      else c._highlighted = null;
+    } else {
+      c._highlighted = null;
+    }
+  });
+  renderConnections();
+}
+
+function clearPathHighlight() {
+  State.nodes.forEach(n => {
+    const el = document.getElementById(`node-${n.id}`);
+    if (el) { el.style.opacity = '1'; el.style.filter = ''; }
+  });
+  State.connections.forEach(c => { c._highlighted = null; c._immediateHighlight = null; });
+}
+
+// Override selectNode to trigger path highlight
+const _origSelectNode = selectNode;
+window.selectNode = function(node) {
+  _origSelectNode(node);
+  highlightPath(node.id);
+  if (typeof MeridianBus !== 'undefined') MeridianBus.emit('promap:node-selected', { node, nodes: window.State.nodes, connections: window.State.connections });
+};
+
+const _origClearSelection = clearSelection;
+window.clearSelection = function() {
+  _origClearSelection();
+  clearPathHighlight();
+  if (typeof MeridianBus !== 'undefined') MeridianBus.emit('promap:node-deselected', {});
+};
+
+
+// Dead code removed in v1.6.11

@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — CORTEX Risk & Controls Engine v1.0
-   Rule-based evaluation of PROMAP blueprint
+   MERIDIAN — CORTEX Risk & Controls Engine v1.6.11
+   NUM-01: C numbering now matches P step index (not independent counter)
    ═══════════════════════════════════════════════ */
 
 const CORTEX = {
@@ -78,61 +78,61 @@ const RISK_RULES = [
     id: 'R001', severity: 'critical',
     name: 'CCP without threshold',
     check: (nodes) => nodes.filter(n => n.type==='ccp' && (!n.thresholds||!n.thresholds.length))
-      .map(n => ({ step: n.name, detail: 'Critical Control Point has no threshold defined — cannot be monitored or verified' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Critical Control Point has no threshold defined — cannot be monitored or verified' }))
   },
   {
     id: 'R002', severity: 'critical',
     name: 'Control step unclassified',
     check: (nodes) => nodes.filter(n => (n.type==='control'||n.type==='ccp') && (!n.classifications||!n.classifications.length))
-      .map(n => ({ step: n.name, detail: 'Control step has no classification — cannot be categorised for compliance reporting' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Control step has no classification — cannot be categorised for compliance reporting' }))
   },
   {
     id: 'R003', severity: 'high',
     name: 'Missing accountability',
     check: (nodes) => nodes.filter(n => !['start','end','decision'].includes(n.type) && !n.accountable)
-      .map(n => ({ step: n.name, detail: 'No Accountable party — failure ownership undefined' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'No Accountable party — failure ownership undefined' }))
   },
   {
     id: 'R004', severity: 'high',
     name: 'Missing responsibility',
     check: (nodes) => nodes.filter(n => !['start','end','decision'].includes(n.type) && !n.responsible)
-      .map(n => ({ step: n.name, detail: 'No Responsible party — execution ownership undefined' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'No Responsible party — execution ownership undefined' }))
   },
   {
     id: 'R005', severity: 'high',
     name: 'Record required but incomplete',
     check: (nodes) => nodes.filter(n => n.recordRequired && !n.retentionPeriod)
-      .map(n => ({ step: n.name, detail: 'Record required but retention period not defined' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Record required but retention period not defined' }))
   },
   {
     id: 'R006', severity: 'medium',
     name: 'Frequency undefined',
     check: (nodes) => nodes.filter(n => !['start','end','decision'].includes(n.type) && !n.frequency)
-      .map(n => ({ step: n.name, detail: 'Frequency not defined — cannot schedule or trigger execution' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Frequency not defined — cannot schedule or trigger execution' }))
   },
   {
     id: 'R007', severity: 'medium',
     name: 'Control not monitored',
     check: (nodes) => nodes.filter(n => (n.type==='control'||n.type==='ccp') && !n.monitoring)
-      .map(n => ({ step: n.name, detail: 'Control or CCP step has SMART monitoring disabled' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Control or CCP step has SMART monitoring disabled' }))
   },
   {
     id: 'R008', severity: 'medium',
     name: 'Handoff without RACI',
     check: (nodes) => nodes.filter(n => n.type==='handoff' && !n.responsible && !n.accountable)
-      .map(n => ({ step: n.name, detail: 'Cross-function handoff has no ownership defined — transfer accountability gap' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Cross-function handoff has no ownership defined — transfer accountability gap' }))
   },
   {
     id: 'R009', severity: 'low',
     name: 'No loop-back on control',
     check: (nodes) => nodes.filter(n => (n.type==='control'||n.type==='ccp') && !n.loopConfirm)
-      .map(n => ({ step: n.name, detail: 'Control step has no loop-back confirmation — downstream may proceed without verification' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Control step has no loop-back confirmation — downstream may proceed without verification' }))
   },
   {
     id: 'R010', severity: 'low',
     name: 'Compliance step not classified regulatory',
     check: (nodes) => nodes.filter(n => n.type==='compliance' && (!n.classifications || (!n.classifications.includes('compliance-regulatory') && !n.classifications.includes('compliance-internal'))))
-      .map(n => ({ step: n.name, detail: 'Compliance step not classified as internal or regulatory' }))
+      .map(n => ({ nodeId: n.id, step: n.name, detail: 'Compliance step not classified as internal or regulatory' }))
   },
 ];
 
@@ -145,15 +145,18 @@ function cortexEvaluate() {
   const functional = nodes.filter(n => !['start','end','decision'].includes(n.type));
 
   // Assign step numbers P001, P002... and control numbers C001, C002...
-  let stepCounter = 0, ctrlCounter = 0;
+  // NUM-01 fix: C number MUST correspond to P number of the same step
+  // e.g. if a control step is P004, its control number is C004 — not an independent counter
+  let stepCounter = 0;
   const stepNumberMap = {}; // nodeId → P001 etc
-  const ctrlNumberMap = {}; // nodeId → C001 etc
+  const ctrlNumberMap = {}; // nodeId → C001 etc (same index as P)
   functional.forEach(n => {
     stepCounter++;
-    stepNumberMap[n.id] = 'P' + String(stepCounter).padStart(3,'0');
+    const pNum = 'P' + String(stepCounter).padStart(3,'0');
+    stepNumberMap[n.id] = pNum;
     if (n.type === 'control' || n.type === 'ccp') {
-      ctrlCounter++;
-      ctrlNumberMap[n.id] = 'C' + String(ctrlCounter).padStart(3,'0');
+      // C number matches P index — C004 for P004
+      ctrlNumberMap[n.id] = 'C' + String(stepCounter).padStart(3,'0');
     }
   });
 
@@ -204,6 +207,11 @@ function cortexEvaluate() {
 
   CORTEX.lastReport = { cosoResults, overallCoso, riskFlags, sodFlags, totalSteps, controlSteps, ccpSteps, monitoredSteps, recordedSteps, classifiedSteps, healthScore, process: State.currentProcess, generatedAt: new Date(), stepNumberMap, ctrlNumberMap };
 
+  // N39: audit trail — log evaluation run
+  if (typeof bufferAudit === 'function') {
+    bufferAudit('evaluated', `CORTEX evaluation run — Health: ${healthScore}%, Flags: ${riskFlags.length}, SoD: ${sodFlags.length}`, null, 'CORTEX');
+  }
+
   renderCortexReport(CORTEX.lastReport);
 }
 
@@ -215,6 +223,61 @@ function renderCortexReport(r) {
   const sevBg    = { critical:'var(--coral-lo)', high:'var(--amber-lo)', medium:'var(--blue-lo)', low:'var(--bg3)' };
   const scoreColor = s => s >= 80 ? 'var(--green)' : s >= 60 ? 'var(--amber)' : 'var(--coral)';
 
+  // N44 — mini process map: inline SVG of node chain
+  const funcNodes = window.State.nodes.filter(n=>!['start','end','decision'].includes(n.type));
+  const miniMap = funcNodes.length ? `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:16px;overflow-x:auto;">
+      <div style="font-size:10px;letter-spacing:.1em;color:var(--text2);margin-bottom:8px;text-transform:uppercase;">Process Map — ${r.process.name}</div>
+      <div style="display:flex;align-items:center;gap:0;flex-wrap:nowrap;min-height:40px;">
+        ${funcNodes.map((n,i)=>{
+          const col = sevColor[r.riskFlags.find(f=>f.nodeId===n.id)?.severity] || 'var(--border)';
+          const stepNum = r.stepNumberMap?.[n.id] || '';
+          return `<div style="display:flex;align-items:center;gap:0;">
+            <div style="background:var(--bg3);border:1.5px solid ${col};border-radius:4px;padding:5px 8px;min-width:70px;max-width:100px;text-align:center;flex-shrink:0;" title="${n.name}">
+              <div style="font-size:9px;color:var(--amber);font-family:monospace;">${stepNum}</div>
+              <div style="font-size:10px;color:var(--text0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.name.length>12?n.name.slice(0,11)+'…':n.name}</div>
+              <div style="font-size:9px;color:${sevColor[r.riskFlags.find(f=>f.nodeId===n.id)?.severity]||'var(--text2)'};">${n.type.slice(0,4).toUpperCase()}</div>
+            </div>
+            ${i<funcNodes.length-1?'<div style="width:20px;height:1px;background:var(--border-hi);flex-shrink:0;">→</div>':''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  // N46 — flag explanation legend
+  const flagLegend = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:16px;">
+      <div style="font-size:10px;letter-spacing:.1em;color:var(--text2);margin-bottom:8px;text-transform:uppercase;">Risk Flag Legend</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+        ${Object.entries(sevColor).map(([sev,col])=>`
+          <div style="background:${sevBg[sev]};border:1px solid ${col};border-radius:4px;padding:6px 8px;">
+            <div style="font-size:10px;color:${col};font-weight:700;letter-spacing:.06em;text-transform:uppercase;">${sev}</div>
+            <div style="font-size:10px;color:var(--text1);margin-top:2px;">${
+              sev==='critical'?'Immediate action — process cannot run safely':
+              sev==='high'?'Fix before next execution cycle':
+              sev==='medium'?'Address in current review period':
+              'Monitor — low impact'
+            }</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  // N53 — scoring model explanation
+  const scoringModel = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:16px;">
+      <div style="font-size:10px;letter-spacing:.1em;color:var(--text2);margin-bottom:8px;text-transform:uppercase;">Process Health Index — Scoring Model</div>
+      <div style="font-size:11px;color:var(--text1);line-height:2;">
+        Base score: 100 &nbsp;|&nbsp;
+        Critical flag: −20 per flag &nbsp;|&nbsp;
+        High flag: −10 per flag &nbsp;|&nbsp;
+        Medium flag: −5 per flag &nbsp;|&nbsp;
+        Low flag: 0 deduction<br/>
+        <span style="color:var(--green);">≥80 = Healthy</span> &nbsp;|&nbsp;
+        <span style="color:var(--amber);">60–79 = Review required</span> &nbsp;|&nbsp;
+        <span style="color:var(--coral);">&lt;60 = At risk</span>
+      </div>
+    </div>`;
+
   container.innerHTML = `
     <!-- Header -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -225,8 +288,11 @@ function renderCortexReport(r) {
       <button class="hdr-btn" onclick="cortexExport()">EXPORT REPORT</button>
     </div>
 
+    <!-- N44 Mini Process Map -->
+    ${miniMap}
+
     <!-- KPI Strip -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;">
       ${[
         { label:'Process Health', value:r.healthScore+'%', color:scoreColor(r.healthScore) },
         { label:'COSO Coverage', value:r.overallCoso+'%', color:scoreColor(r.overallCoso) },
@@ -237,16 +303,20 @@ function renderCortexReport(r) {
       ].map(k=>`
         <div style="background:var(--bg2);border:1px solid var(--border);border-top:2px solid ${k.color};border-radius:5px;padding:11px 13px;">
           <div style="font-size:10px;letter-spacing:.1em;color:var(--text2);margin-bottom:7px;text-transform:uppercase;">${k.label}</div>
-          <div style="font-size:24px;font-weight:700;color:${k.color};">${k.value}</div>
+          <div style="font-size:22px;font-weight:700;color:${k.color};">${k.value}</div>
         </div>`).join('')}
     </div>
+
+    <!-- N46 Flag Legend + N53 Scoring Model -->
+    ${flagLegend}
+    ${scoringModel}
 
     <!-- COSO + Risk Flags -->
     <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:12px;margin-bottom:16px;">
 
       <!-- COSO -->
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:14px;">
-        <div style="font-size:11px;letter-spacing:.1em;color:var(--text2);margin-bottom:12px;text-transform:uppercase;">COSO Framework Coverage</div>
+        <div style="font-size:11px;letter-spacing:.1em;color:var(--text2);margin-bottom:12px;text-transform:uppercase;">Control Framework Coverage</div>
         ${r.cosoResults.map(c=>`
           <div style="margin-bottom:10px;">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;">

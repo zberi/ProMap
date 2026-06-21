@@ -18,7 +18,25 @@ function readData() { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
 function writeData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
 // ── HEALTH ───────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', version:'1.6.2', arcoMode: ARCO_MODE }));
+app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', version:'1.6.11', arcoMode: ARCO_MODE }));
+
+// ── AUDIT LOG HELPERS ────────────────────────────
+function makeAuditEntry(action, module, detail, changes) {
+  return {
+    ts: new Date().toISOString(),
+    action,   // created | modified | deleted | published | archived | evaluated
+    module,   // PROMAP | ARCŌ | CORTEX | SYSTEM
+    detail,   // human-readable summary
+    changes: changes || null,  // { field, from, to } or null
+  };
+}
+
+function appendAudit(process, entry) {
+  if (!process.auditLog) process.auditLog = [];
+  process.auditLog.push(entry);
+  // Cap at 500 entries per process
+  if (process.auditLog.length > 500) process.auditLog = process.auditLog.slice(-500);
+}
 
 // ── PROCESSES ────────────────────────────────────
 app.get('/api/processes', (req, res) => res.json(readData().processes));
@@ -31,7 +49,12 @@ app.get('/api/processes/:id', (req, res) => {
 
 app.post('/api/processes', (req, res) => {
   const data = readData();
-  const p = { id:'P-'+Date.now(), createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(), version:1, status:'draft', ...req.body, nodes:req.body.nodes||[], connections:req.body.connections||[] };
+  const p = {
+    id:'P-'+Date.now(), createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
+    version:1, status:'draft', ...req.body,
+    nodes:req.body.nodes||[], connections:req.body.connections||[], auditLog:[]
+  };
+  appendAudit(p, makeAuditEntry('created', 'PROMAP', `Process "${p.name}" created`));
   data.processes.push(p);
   writeData(data);
   res.status(201).json(p);
@@ -41,16 +64,67 @@ app.put('/api/processes/:id', (req, res) => {
   const data = readData();
   const idx = data.processes.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  data.processes[idx] = { ...data.processes[idx], ...req.body, id:req.params.id, updatedAt:new Date().toISOString(), version:(data.processes[idx].version||1)+1 };
+  const prev = data.processes[idx];
+  const next = { ...prev, ...req.body, id:req.params.id, updatedAt:new Date().toISOString(), version:(prev.version||1)+1 };
+
+  // Preserve existing audit log + append new entries
+  if (!next.auditLog) next.auditLog = prev.auditLog || [];
+
+  const module = req.body._auditModule || 'PROMAP';
+  const auditEntries = req.body._auditEntries || [];
+  delete next._auditModule;
+  delete next._auditEntries;
+
+  // Status change
+  if (prev.status !== next.status) {
+    appendAudit(next, makeAuditEntry(next.status, module, `Status changed: ${prev.status} → ${next.status}`, { field:'status', from:prev.status, to:next.status }));
+  }
+
+  // Node count change
+  const prevNodeCount = (prev.nodes||[]).length;
+  const nextNodeCount = (next.nodes||[]).length;
+  if (prevNodeCount !== nextNodeCount) {
+    const delta = nextNodeCount - prevNodeCount;
+    appendAudit(next, makeAuditEntry('modified', module, `${delta>0?'Added':'Removed'} ${Math.abs(delta)} step(s) — total: ${nextNodeCount}`, { field:'nodes', from:prevNodeCount, to:nextNodeCount }));
+  }
+
+  // Connection count change
+  const prevConnCount = (prev.connections||[]).length;
+  const nextConnCount = (next.connections||[]).length;
+  if (prevConnCount !== nextConnCount) {
+    appendAudit(next, makeAuditEntry('modified', module, `Connections: ${prevConnCount} → ${nextConnCount}`, { field:'connections', from:prevConnCount, to:nextConnCount }));
+  }
+
+  // Extra audit entries passed from client (field-level changes)
+  auditEntries.forEach(e => appendAudit(next, e));
+
+  // Generic save entry if no specific changes detected
+  if (!auditEntries.length && prev.status === next.status && prevNodeCount === nextNodeCount && prevConnCount === nextConnCount) {
+    appendAudit(next, makeAuditEntry('modified', module, `Process "${next.name}" saved (v${next.version})`));
+  }
+
+  data.processes[idx] = next;
   writeData(data);
-  res.json(data.processes[idx]);
+  res.json(next);
 });
 
 app.delete('/api/processes/:id', (req, res) => {
   const data = readData();
+  const p = data.processes.find(p => p.id === req.params.id);
+  if (p) {
+    // Archive the audit log to a separate deleted log before removing
+    // (For V1 — just remove; in V2 soft-delete will preserve)
+  }
   data.processes = data.processes.filter(p => p.id !== req.params.id);
   writeData(data);
   res.json({ success: true });
+});
+
+// ── AUDIT LOG ENDPOINT ───────────────────────────
+app.get('/api/processes/:id/audit', (req, res) => {
+  const p = readData().processes.find(p => p.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'Not found' });
+  res.json({ auditLog: p.auditLog || [], process: { id: p.id, name: p.name } });
 });
 
 // ── FILE UPLOAD (ARCŌ) ───────────────────────────
@@ -110,6 +184,9 @@ L1=Process Group, L2=Process, L3=Sub-Process, L4=Step (default), L5=Task, L6=Sub
 ### RACI
 Every non-trivial step must have: Responsible (R), Accountable (A), Consulted (C), Informed (I). Flag missing R and A.
 
+### Department
+Every step must have a department (e.g. Finance, Sales, Warehouse, HR, Procurement, Manufacturing). Infer from context or owner role. Always populate — never leave blank. Used for process grouping on canvas.
+
 ### Classifications (multi-select)
 control, compliance-internal, compliance-regulatory, reporting, information
 
@@ -157,6 +234,7 @@ When EXISTING PROCESS is provided in context, output a <PATCH> block for surgica
   "name": "",
   "type": "process",
   "stepId": "S1",
+  "department": "",
   "responsible": "",
   "accountable": "",
   "consulted": "",
@@ -181,14 +259,24 @@ Optionally include connections after ALL steps are output:
 [{"from":"S1","to":"S2","type":"sequence","label":""}]
 </CONNECTIONS>
 
-CONNECTIONS RULES:
-- Always output a complete <CONNECTIONS> block covering ALL step-to-step links
-- Include cross-group and cross-level connections (e.g. last step of L3.1 group → first step of L3.2 group)
-- Do not omit any connection — missing connections break the process flow in PROMAP
-- Decision steps must have labelled branches: YES and NO connections both included
+After CONNECTIONS, always output these three registers if applicable:
+
+<CCP_REGISTER>
+[{"stepId":"S3","name":"","parameter":"","min":"","max":"","unit":"","action":"","verifier":"","department":""}]
+</CCP_REGISTER>
+
+<DEPENDENCY_MAP>
+[{"from":"S2","to":"S5","type":"dependency","reason":"S5 cannot start until S2 output confirmed"}]
+</DEPENDENCY_MAP>
+
+<MONITORING_REGISTER>
+[{"stepId":"S2","name":"","frequency":"","monitoredBy":"","method":"","department":""}]
+</MONITORING_REGISTER>
+
+Output these even if empty (empty array). Never omit them.
 
 ## DEFAULTS
-frequency=monthly, inputType=manual, classifications=["control"], monitoring=true, recordRequired=true, retentionPeriod="10 years", level=L4
+frequency=monthly, inputType=manual, classifications=["control"], monitoring=true, recordRequired=true, retentionPeriod="10 years", level=L4, department=inferred from context
 
 ## TONE
 Professional, concise, enterprise-grade. One question at a time. You are ARCŌ, the MERIDIAN process intake assistant — not a generic AI.`;
@@ -214,7 +302,7 @@ app.post('/api/arco/chat', async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         max_tokens: 8000,
         system,
         messages
@@ -233,7 +321,7 @@ app.post('/api/arco/chat', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`\n  ╔══════════════════════════════════════════╗`);
-  console.log(`  ║  MERIDIAN v1.6.2  —  Running on :${PORT}  ║`);
+  console.log(`  ║  MERIDIAN v1.6.11 —  Running on :${PORT}  ║`);
   console.log(`  ║  http://localhost:${PORT}                 ║`);
   console.log(`  ║  ARCŌ mode: ${ARCO_MODE.padEnd(28)}║`);
   console.log(`  ╚══════════════════════════════════════════╝\n`);

@@ -23,6 +23,7 @@
     <span id="hdr-version" class="hdr-label" style="margin-left:9px;display:none;"></span>
   </div>
   <div class="hdr-r">
+    <button class="hdr-btn" id="btn-audit" onclick="showAuditTrail()" style="display:none;">AUDIT TRAIL</button>
     <button class="hdr-btn" onclick="undoAction()" id="btn-undo" title="Undo (Ctrl+Z)" style="display:none;">↩ UNDO</button>
     <button class="hdr-btn" onclick="newProcess()">+ NEW PROCESS</button>
     <button class="hdr-btn primary" id="btn-save" onclick="saveProcess()" style="display:none;">SAVE</button>
@@ -114,13 +115,13 @@
       <!-- Layer filter bar -->
       <div id="layer-filter">
         <span style="font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.08em;padding:4px 8px 4px 4px;border-right:1px solid var(--border);margin-right:2px;text-transform:uppercase;white-space:nowrap;">Layers</span>
-        <button class="lf-btn active" onclick="setLayerFilter('all')">All</button>
-        <button class="lf-btn" onclick="setLayerFilter('controls-only')">Controls</button>
-        <button class="lf-btn" onclick="setLayerFilter('critical-only')">Critical</button>
-        <button class="lf-btn" onclick="setLayerFilter('manual-controls')">Manual</button>
-        <button class="lf-btn" onclick="setLayerFilter('compliance-view')">Compliance</button>
-        <button class="lf-btn" onclick="setLayerFilter('process-only')">Process</button>
-        <button class="lf-btn" onclick="setLayerFilter('monitoring-view')">Monitored</button>
+        <button class="lf-btn active" data-filter="all" onclick="setLayerFilter('all')">All</button>
+        <button class="lf-btn" data-filter="controls-only" onclick="setLayerFilter('controls-only')">Controls</button>
+        <button class="lf-btn" data-filter="critical-only" onclick="setLayerFilter('critical-only')">Critical</button>
+        <button class="lf-btn" data-filter="manual-controls" onclick="setLayerFilter('manual-controls')">Manual</button>
+        <button class="lf-btn" data-filter="compliance-view" onclick="setLayerFilter('compliance-view')">Compliance</button>
+        <button class="lf-btn" data-filter="process-only" onclick="setLayerFilter('process-only')">Process</button>
+        <button class="lf-btn" data-filter="monitoring-view" onclick="setLayerFilter('monitoring-view')">Monitored</button>
       </div>
 
       <!-- Float triggers -->
@@ -197,6 +198,11 @@
   <!-- ARCŌ VIEW -->
   <div id="arco-view" style="display:none;flex:1;min-height:0;">
     <div id="arco-chat">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        <div style="background:var(--amber-lo);border:1px solid var(--amber);border-radius:4px;padding:4px 9px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--amber);font-family:var(--font-mono);">ARCŌ</div>
+        <div style="font-size:12px;color:var(--text1);">Process Intake — <span style="color:var(--text2);">Describe, extract, refine, send to PROMAP</span></div>
+        <div style="margin-left:auto;font-size:11px;color:var(--text2);" id="arco-mode-badge"></div>
+      </div>
       <div id="arco-feed"></div>
       <div id="arco-input-bar">
         <textarea id="arco-input" placeholder="Describe your process in plain language... (Enter to send, Shift+Enter for new line)"
@@ -305,8 +311,8 @@
     document.getElementById('promap-view').style.display  = tab === 'promap'  ? 'flex' : 'none';
     document.getElementById('arco-view').style.display    = tab === 'arco'    ? 'flex' : 'none';
     document.getElementById('cortex-view').style.display  = tab === 'cortex'  ? 'flex' : 'none';
-    document.getElementById('sidebar-promap').style.display = tab === 'promap' ? '' : 'none';
-    document.getElementById('sidebar-arco').style.display   = tab === 'arco'   ? '' : 'none';
+    document.getElementById('sidebar-promap').style.display = tab === 'promap' ? 'block' : 'none';
+    document.getElementById('sidebar-arco').style.display   = tab === 'arco'   ? 'block' : 'none';
     if (tab === 'arco' && document.getElementById('arco-feed').children.length === 0) arcoGreet();
     if (tab === 'arco' && typeof syncProcessContext === 'function') syncProcessContext();
   }
