@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — PROMAP Engine v1.6.13
-   v1.6.13: LAY-10 dept boundary recompute on add/delete/connect
-            LAY-11 bidirectional dept gap pull fixed
-            LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — PROMAP Engine v1.6.11
+   Fixes: N51 layer filter; N76 save guard; N78 pedigree guard; N79 verified
+   N39/N62: Audit trail — field-level change capture, viewer panel
    ═══════════════════════════════════════════════ */
 
 window.State = {
@@ -1008,8 +1007,6 @@ function addNode(type, x, y) {
   bufferAudit('modified', `Step added: "${node.name}" [${type}]`, { field:'node', from:null, to:node.name });
   document.getElementById('empty-state').style.display = 'none';
   renderNode(node); renderConnections(); selectNode(node);
-  // LAY-10: recompute dept boundaries after every node add
-  enforceAllDeptGaps(); renderCanvas();
 }
 
 // ── NODE DRAG ─────────────────────────────────────
@@ -1138,9 +1135,7 @@ function addConnection(fromId, toId, type='sequence') {
   if (State.connections.find(c=>c.from===fromId&&c.to===toId&&c.type===type)) { notify('Connection already exists','error'); return; }
   pushUndo();
   State.connections.push({ id:'C-'+Date.now(), from:fromId, to:toId, type, label:'' });
-  State.dirty=true;
-  // LAY-10: recompute dept boundaries after connection add
-  enforceAllDeptGaps(); renderConnections();
+  State.dirty=true; renderConnections();
   notify(`${type} connection added`,'success');
 }
 
@@ -1539,17 +1534,13 @@ function executeDelete() {
     bufferAudit('deleted', `Step deleted: "${State.selectedNode.name}" [${State.selectedNode.type}]`, { field:'node', from:State.selectedNode.name, to:null });
     State.nodes=State.nodes.filter(n=>n.id!==id);
     State.connections=State.connections.filter(c=>c.from!==id&&c.to!==id);
-    State.dirty=true; clearSelection();
-    // LAY-10/11: recompute dept boundaries after delete (handles shrink too)
-    enforceAllDeptGaps(); renderCanvas();
+    State.dirty=true; clearSelection(); renderCanvas();
     if (!State.nodes.length) document.getElementById('empty-state').style.display='block';
     notify('Step deleted','info');
   } else if (State.selectedConn) {
     bufferAudit('modified', `Connector deleted: ${State.selectedConn.type}`, { field:'connection', from:State.selectedConn.id, to:null });
     State.connections=State.connections.filter(c=>c.id!==State.selectedConn.id);
-    State.dirty=true; clearSelection();
-    // LAY-10: recompute after connector delete
-    enforceAllDeptGaps(); renderConnections();
+    State.dirty=true; clearSelection(); renderConnections();
     notify('Connection deleted','info');
   }
 }
@@ -1778,17 +1769,16 @@ function enforceAllDeptGaps() {
             b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
           }
           changed = true;
-        } else if (!overlapX && !overlapY) {
-          // LAY-11: both axes clear — pull if too far apart (bidirectional shrink)
-          if (gapY_ab > MAX_GAP && Math.abs(gapX_ab) < MAX_GAP * 3) {
-            const pull = gapY_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
-            changed = true;
-          } else if (gapX_ab > MAX_GAP && Math.abs(gapY_ab) < MAX_GAP * 3) {
-            const pull = gapX_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
-            changed = true;
-          }
+        } else if (gapY_ab > MAX_GAP && !overlapX) {
+          // Too far apart vertically — pull b up
+          const pull = gapY_ab - MIN_GAP;
+          b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
+          changed = true;
+        } else if (gapX_ab > MAX_GAP && !overlapY) {
+          // Too far apart horizontally — pull b left
+          const pull = gapX_ab - MIN_GAP;
+          b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
+          changed = true;
         }
       }
     }

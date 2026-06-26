@@ -1,8 +1,6 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — PROMAP Engine v1.6.13
-   v1.6.13: LAY-10 dept boundary recompute on add/delete/connect
-            LAY-11 bidirectional dept gap pull fixed
-            LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — PROMAP Engine v1.6.11
+   Fixes: N51 layer filter; N76 save guard; N78 pedigree guard; N79 verified
    ═══════════════════════════════════════════════ */
 
 window.State = {
@@ -19,92 +17,7 @@ window.State = {
   confirmCallback: null,
   confirmCancelCallback: null,
   lastNodeLevel: 'L4',
-  auditBuffer: [],   // N39: pending audit entries flushed on save
 };
-
-// ── AUDIT HELPERS ─────────────────────────────────
-function auditEntry(action, detail, changes, module) {
-  return { ts: new Date().toISOString(), action, module: module||'PROMAP', detail, changes: changes||null };
-}
-
-function bufferAudit(action, detail, changes, module) {
-  State.auditBuffer.push(auditEntry(action, detail, changes, module));
-}
-
-async function showAuditTrail() {
-  if (!State.currentProcess) { notify('No process loaded','error'); return; }
-  try {
-    const data = await api('GET', `/api/processes/${State.currentProcess.id}/audit`);
-    renderAuditPanel(data.auditLog || [], data.process.name);
-  } catch(e) { notify('Could not load audit trail','error'); }
-}
-
-function renderAuditPanel(log, processName) {
-  // Remove existing panel if open
-  const existing = document.getElementById('audit-panel');
-  if (existing) { existing.remove(); return; }
-
-  const panel = document.createElement('div');
-  panel.id = 'audit-panel';
-  panel.style.cssText = `
-    position:fixed;right:18px;top:110px;width:420px;max-height:calc(100vh - 130px);
-    background:var(--bg1);border:1px solid var(--border);border-radius:7px;
-    box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:300;display:flex;flex-direction:column;overflow:hidden;`;
-
-  const header = `
-    <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-      <div>
-        <span style="font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--text1);">AUDIT TRAIL</span>
-        <span style="font-size:11px;color:var(--text2);margin-left:8px;">${processName}</span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="hdr-btn" style="font-size:11px;padding:4px 10px;" onclick="exportAuditTrail()">EXPORT</button>
-        <span style="cursor:pointer;color:var(--text2);font-size:18px;" onclick="document.getElementById('audit-panel').remove()">×</span>
-      </div>
-    </div>`;
-
-  const entries = log.length ? [...log].reverse().map(e => {
-    const ts = new Date(e.ts);
-    const time = ts.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ' ' + ts.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    const actionColor = {
-      created:'var(--teal)', modified:'var(--text1)', deleted:'var(--coral)',
-      published:'var(--green)', archived:'var(--text2)', evaluated:'var(--violet)'
-    }[e.action] || 'var(--text1)';
-    return `
-      <div style="padding:9px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;">
-        <div style="text-align:right;">
-          <div style="font-size:10px;color:var(--text2);white-space:nowrap;">${time}</div>
-          <div style="font-size:9px;color:${actionColor};letter-spacing:.06em;text-transform:uppercase;margin-top:2px;">${e.action}</div>
-          <div style="font-size:9px;color:var(--text2);margin-top:1px;">${e.module}</div>
-        </div>
-        <div>
-          <div style="font-size:12px;color:var(--text0);">${e.detail}</div>
-          ${e.changes ? `<div style="font-size:10px;color:var(--text2);margin-top:3px;">${e.changes.field}: <span style="color:var(--coral);">${e.changes.from??'—'}</span> → <span style="color:var(--teal);">${e.changes.to??'—'}</span></div>` : ''}
-        </div>
-      </div>`;
-  }).join('') : '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text2);">No audit entries yet.</div>';
-
-  panel.innerHTML = header + `<div style="overflow-y:auto;flex:1;">${entries}</div>`;
-  document.body.appendChild(panel);
-}
-
-async function exportAuditTrail() {
-  if (!State.currentProcess) return;
-  const data = await api('GET', `/api/processes/${State.currentProcess.id}/audit`);
-  const log = data.auditLog || [];
-  const lines = [
-    `AUDIT TRAIL — ${data.process.name}`,
-    `Generated: ${new Date().toLocaleString('en-GB')}`,
-    `${'─'.repeat(60)}`,
-    ...log.map(e => `[${e.ts}] ${e.action.toUpperCase()} | ${e.module} | ${e.detail}${e.changes?` | ${e.changes.field}: ${e.changes.from}→${e.changes.to}`:''}`)
-  ].join('\n');
-  const blob = new Blob([lines],{type:'text/plain'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `AUDIT_${(State.currentProcess.processId||State.currentProcess.name).replace(/\s+/g,'_')}.txt`;
-  a.click();
-  notify('Audit trail exported','success');
-}
 
 const MAX_UNDO = 30;
 
@@ -209,10 +122,7 @@ async function saveProcess() {
     status: State.currentProcess.status || 'draft',
     nodes: JSON.parse(JSON.stringify(State.nodes || [])),
     connections: JSON.parse(JSON.stringify(State.connections || [])),
-    _auditModule: 'PROMAP',
-    _auditEntries: [...State.auditBuffer],
   };
-  State.auditBuffer = []; // flush buffer
   const saved = await api('PUT', `/api/processes/${State.currentProcess.id}`, saveData);
   State.currentProcess = saved;
   const idx = State.processes.findIndex(p => p.id === saved.id);
@@ -257,7 +167,6 @@ async function deleteProcess(id) {
 
 async function publishProcess() {
   if (!State.currentProcess) return;
-  bufferAudit('published', `Process "${State.currentProcess.name}" published`, { field:'status', from:'draft', to:'published' });
   State.currentProcess.status = 'published';
   await saveProcess(); updateHeader();
 }
@@ -369,15 +278,12 @@ function renderProcessList() {
   addBtn.innerHTML = `<button class="hdr-btn primary" style="width:100%;font-size:12px;" onclick="newProcess()">+ ADD PROCESS</button>`;
   el.appendChild(addBtn);
 
-  const active = State.processes.filter(p => p.status !== 'archived');
-  const archived = State.processes.filter(p => p.status === 'archived');
-  const published = State.processes.filter(p => p.status === 'published');
-
-  if (!active.length) {
+  if (!State.processes.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'padding:8px 14px;font-size:13px;color:var(--text2);';
     empty.textContent = 'No processes yet.';
     el.appendChild(empty);
+    return;
   }
 
   function renderItem(p, depth) {
@@ -390,74 +296,14 @@ function renderProcessList() {
           <div class="pi-name">${depth>0?'└ ':''}${p.name}</div>
           <div class="pi-meta">${p.processId||'—'} · ${p.level||'L2'} · ${p.function||'—'}</div>
         </div>
-        <div style="display:flex;gap:2px;flex-shrink:0;">
-          <span onclick="event.stopPropagation();archiveProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
-            style="color:var(--text2);cursor:pointer;font-size:15px;padding:0 3px;" title="Archive process">×</span>
-          <span onclick="event.stopPropagation();confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
-            style="color:var(--coral);cursor:pointer;font-size:13px;padding:0 3px;" title="Permanently delete">🗑</span>
-        </div>
+        <span onclick="event.stopPropagation();confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');"
+          style="color:var(--text2);cursor:pointer;font-size:15px;padding:0 4px;flex-shrink:0;" title="Delete process">×</span>
       </div>`;
     div.addEventListener('click', () => loadProcess(p));
     el.appendChild(div);
-    active.filter(c => c.parentId === p.id).forEach(child => renderItem(child, depth+1));
+    State.processes.filter(c => c.parentId === p.id).forEach(child => renderItem(child, depth+1));
   }
-  active.filter(p => !p.parentId).forEach(p => renderItem(p, 0));
-
-  // N73 — Archived processes section
-  if (archived.length) {
-    const archHdr = document.createElement('div');
-    archHdr.innerHTML = `<div class="sb-hr"></div><div class="sb-section" style="color:var(--text2);">Archived (${archived.length})</div>`;
-    el.appendChild(archHdr);
-    archived.forEach(p => {
-      const div = document.createElement('div');
-      div.style.cssText = 'padding:6px 14px;display:flex;justify-content:space-between;align-items:center;opacity:.6;';
-      div.innerHTML = `
-        <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${p.name}</div>
-        <span onclick="restoreProcess('${p.id}');" style="font-size:11px;color:var(--teal);cursor:pointer;padding:0 4px;flex-shrink:0;" title="Restore">↺</span>
-        <span onclick="confirmDeleteProcess('${p.id}','${p.name.replace(/'/g,"\\'")}');" style="font-size:13px;color:var(--coral);cursor:pointer;padding:0 3px;flex-shrink:0;" title="Permanently delete">🗑</span>`;
-      el.appendChild(div);
-    });
-  }
-
-  // N70 — SOP register: published SOPs at bottom
-  if (published.length) {
-    const sopHdr = document.createElement('div');
-    sopHdr.innerHTML = `<div class="sb-hr"></div><div class="sb-section" style="color:var(--teal);">Published SOPs (${published.length})</div>`;
-    el.appendChild(sopHdr);
-    published.forEach(p => {
-      const div = document.createElement('div');
-      div.style.cssText = 'padding:5px 14px;cursor:pointer;';
-      div.innerHTML = `<div style="font-size:11px;color:var(--teal);">${p.processId||'—'} · ${p.name}</div><div style="font-size:10px;color:var(--text2);">v${p.version||1} · Published</div>`;
-      div.addEventListener('click', () => loadProcess(p));
-      el.appendChild(div);
-    });
-  }
-}
-
-async function archiveProcess(id, name) {
-  // N71: × = archive not delete
-  const data = await api('GET', `/api/processes/${id}`);
-  if (!data) return;
-  await api('PUT', `/api/processes/${id}`, { ...data, status: 'archived' });
-  const idx = State.processes.findIndex(p => p.id === id);
-  if (idx >= 0) State.processes[idx].status = 'archived';
-  if (State.currentProcess?.id === id) {
-    State.currentProcess.status = 'archived';
-    updateHeader();
-  }
-  renderProcessList();
-  notify(`"${name}" archived`, 'info');
-}
-
-async function restoreProcess(id) {
-  // N73: restore archived process to draft
-  const data = await api('GET', `/api/processes/${id}`);
-  if (!data) return;
-  await api('PUT', `/api/processes/${id}`, { ...data, status: 'draft' });
-  const idx = State.processes.findIndex(p => p.id === id);
-  if (idx >= 0) State.processes[idx].status = 'draft';
-  renderProcessList();
-  notify('Process restored to draft', 'success');
+  State.processes.filter(p => !p.parentId).forEach(p => renderItem(p, 0));
 }
 
 // ── HEADER ────────────────────────────────────────
@@ -470,10 +316,10 @@ function updateHeader() {
     statusEl.textContent = (p.status||'DRAFT').toUpperCase();
     statusEl.className = 'status-badge '+(p.status==='published'?'status-published':'status-draft');
     statusEl.style.display = ''; versionEl.textContent = `v${p.version||1}`; versionEl.style.display = '';
-    ['btn-save','btn-publish','btn-export','btn-export-pdf','btn-audit'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display=''; });
+    ['btn-save','btn-publish','btn-export'].forEach(id => document.getElementById(id).style.display='');
   } else {
     statusEl.style.display='none'; versionEl.style.display='none';
-    ['btn-save','btn-publish','btn-export','btn-export-pdf','btn-audit'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+    ['btn-save','btn-publish','btn-export'].forEach(id => document.getElementById(id).style.display='none');
   }
 }
 
@@ -614,79 +460,65 @@ function getConnGeometry(conn) {
   if (!fn||!tn) return null;
   const fe = document.getElementById(`node-${conn.from}`);
   const te = document.getElementById(`node-${conn.to}`);
-  const fw = (fe && fe.offsetWidth  > 0) ? fe.offsetWidth  : (['start','end'].includes(fn.type) ? 120 : 172);
-  const fh = (fe && fe.offsetHeight > 0) ? fe.offsetHeight : 80;
-  const tw = (te && te.offsetWidth  > 0) ? te.offsetWidth  : (['start','end'].includes(tn.type) ? 120 : 172);
-  const th = (te && te.offsetHeight > 0) ? te.offsetHeight : 80;
+  const fw = (fe && fe.offsetWidth  > 0) ? fe.offsetWidth  : (['start','end'].includes(fn.type) ? 110 : 170);
+  const fh = (fe && fe.offsetHeight > 0) ? fe.offsetHeight : 70;
+  const tw = (te && te.offsetWidth  > 0) ? te.offsetWidth  : (['start','end'].includes(tn.type) ? 110 : 170);
+  const th = (te && te.offsetHeight > 0) ? te.offsetHeight : 70;
+  const x1 = fn.x + fw, y1 = fn.y + fh/2;
+  const x2 = tn.x,      y2 = tn.y + th/2;
   const GAP = 20;
-  const TITLE_H = 24; // approximate node title/header height — connector clears this
-
-  // ── LOOP: top-centre → soft bezier arc above → top-centre ──
-  if (conn.type === 'loop') {
-    const lx1 = fn.x + fw/2, ly1 = fn.y;
-    const lx2 = tn.x + tw/2, ly2 = tn.y;
-    const loopY = Math.min(ly1, ly2) - 60;
-    const segments = [
-      {x1:lx1, y1:ly1, x2:lx1, y2:loopY},
-      {x1:lx1, y1:loopY, x2:lx2, y2:loopY},
-      {x1:lx2, y1:loopY, x2:lx2, y2:ly2},
-    ];
-    return { x1:lx1, y1:ly1, x2:lx2, y2:ly2, segments, isBack:true, isLoop:true, fn,tn,fw,fh,tw,th,GAP };
-  }
-
-  // Normal forward: right-centre (below title) → left-centre
-  // Clearance from dept boundary edges — shift exit/entry Y if too close to boundary
-  const { PAD: CPPAD } = LAYOUT;
-  const deptBounds = computeDeptBounds();
-  let adjY1 = fn.y + Math.max(fh/2, 24);
-  let adjY2 = tn.y + Math.max(th/2, 24);
-  // If exit point is within PAD of any dept boundary top or bottom, nudge inside
-  Object.values(deptBounds).forEach(b => {
-    if (Math.abs(adjY1 - b.top) < CPPAD)    adjY1 = b.top + CPPAD;
-    if (Math.abs(adjY1 - b.bottom) < CPPAD) adjY1 = b.bottom - CPPAD;
-    if (Math.abs(adjY2 - b.top) < CPPAD)    adjY2 = b.top + CPPAD;
-    if (Math.abs(adjY2 - b.bottom) < CPPAD) adjY2 = b.bottom - CPPAD;
-  });
-  const x1 = fn.x + fw, y1 = adjY1;
-  const x2 = tn.x,      y2 = adjY2;
-
   const isBack = x2 < x1 + GAP*2;
-
+  let segments; // array of {x1,y1,x2,y2} straight segments
+  if (conn.type === 'loop') {
+    const lx1=fn.x+fw/2, ly1=fn.y, lx2=tn.x+tw/2, ly2=tn.y;
+    const loopY = Math.min(ly1,ly2) - 50;
+    segments = [
+      {x1:lx1,y1:ly1,x2:lx1,y2:loopY},
+      {x1:lx1,y1:loopY,x2:lx2,y2:loopY},
+      {x1:lx2,y1:loopY,x2:lx2,y2:ly2},
+    ];
+    return { x1:lx1,y1:ly1,x2:lx2,y2:ly2, segments, isBack:true, isLoop:true, fn,tn,fw,fh,tw,th,GAP };
+  }
   if (isBack) {
-    const isWrapDown = fn.y < tn.y - 20;
-
+    const isWrapDown = fn.y < tn.y; // target is on a lower row
     if (isWrapDown) {
-      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;    // bottom-centre source
-      const ox2 = tn.x + tw/2, oy2 = tn.y;          // top-centre target
-      // Route in the GAP between source bottom and target top — midpoint
-      // Also respect dept boundary clearance (LAYOUT.PAD from boundary edge)
-      let routeY = (oy1 + oy2) / 2; // midpoint of inter-row gap
-      // Ensure clearance from dept boundary bottom edges
-      const { PAD } = LAYOUT;
-      const deptBounds = computeDeptBounds();
-      Object.values(deptBounds).forEach(b => {
-        // If route passes through a dept boundary bottom, push below it
-        if (routeY > b.bottom - PAD && routeY < b.bottom + PAD) {
-          routeY = b.bottom + PAD;
+      // Exit bottom of source, route BELOW every node between source and
+      // target row-wise (never crosses through a shape), enter bottom of target.
+      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;     // bottom-centre of source
+      const ox2 = tn.x + tw/2, oy2 = tn.y + th;     // bottom-centre of target
+      // Clear below the tallest node bottom edge between source row and target row
+      let maxBottom = Math.max(oy1, oy2);
+      State.nodes.forEach(n => {
+        if (n.y >= fn.y && n.y <= tn.y) {
+          const el = document.getElementById(`node-${n.id}`);
+          const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+          maxBottom = Math.max(maxBottom, (n.y||0) + nh);
         }
       });
-      const segments = [
-        {x1:ox1, y1:oy1, x2:ox1, y2:routeY},
-        {x1:ox1, y1:routeY, x2:ox2, y2:routeY},
-        {x1:ox2, y1:routeY, x2:ox2, y2:oy2},
+      const clearY = maxBottom + 30;
+      segments = [
+        {x1:ox1, y1:oy1, x2:ox1, y2:clearY},
+        {x1:ox1, y1:clearY, x2:ox2, y2:clearY},
+        {x1:ox2, y1:clearY, x2:ox2, y2:oy2},
       ];
-      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, routeY, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
-
+      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
     } else {
-      // Same-row back: right-centre exit → orthogonal arc above → top-centre entry
-      const segments = [{x1, y1, x2:tn.x+tw/2, y2:tn.y}];
-      return { x1, y1, x2:tn.x+tw/2, y2:tn.y, segments, isBack:true, isSameRowBack:true, isWrapDown:false, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+      // Same row back-route — exit right, arc above
+      const stubX = Math.max(x1, tn.x + tw) + GAP + 30;
+      const routeY = Math.min(fn.y, tn.y) - 40;
+      segments = [
+        {x1, y1, x2:stubX, y2:y1},
+        {x1:stubX, y1, x2:stubX, y2:routeY},
+        {x1:stubX, y1:routeY, x2:x2-GAP, y2:routeY},
+        {x1:x2-GAP, y1:routeY, x2:x2-GAP, y2},
+        {x1:x2-GAP, y1:y2, x2, y2},
+      ];
     }
+  } else {
+    // Straight / gentle bezier — record as two endpoint segment for crossing detection
+    segments = [{x1,y1,x2,y2}];
   }
-
-  // Normal forward — bezier right→left
-  const segments = [{x1, y1, x2, y2}];
-  return { x1, y1, x2, y2, segments, isBack:false, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+  return { x1,y1,x2,y2, segments, isBack, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
 }
 
 // Segment intersection (excluding endpoints)
@@ -724,7 +556,8 @@ function renderGroupContainers(svg) {
   // If multiple child-processes exist under same parent, each gets its own container.
   // Also: nodes with explicit groupId field still group (manual override).
 
-  const { PAD, HEADER_H, DEPT_GAP: MIN_DEPT_GAP } = LAYOUT;
+  const PAD = 40;
+  const HEADER_H = 28;
 
   const groups = {}; // key → { label, nodes[] }
 
@@ -736,16 +569,18 @@ function renderGroupContainers(svg) {
   });
 
   // 2. Auto-group: if current process has a parentId, wrap ALL canvas nodes
+  //    in a container labelled by parent process name
   if (State.currentProcess && State.currentProcess.parentId) {
     const parent = State.processes.find(p => p.id === State.currentProcess.parentId);
     if (parent && State.nodes.length >= 1) {
       const gid = '__parent_' + State.currentProcess.parentId;
       if (!groups[gid]) groups[gid] = { label: parent.name, nodes: [] };
+      // Add all nodes not already in a manual group
       State.nodes.forEach(n => { if (!n.groupId) groups[gid].nodes.push(n); });
     }
   }
 
-  // 3. Auto-group by department field on nodes
+  // 4. Auto-group by department field on nodes (OBS-01/03)
   State.nodes.forEach(n => {
     if (!n.department) return;
     const gid = '__dept_' + n.department;
@@ -753,10 +588,10 @@ function renderGroupContainers(svg) {
     groups[gid].nodes.push(n);
   });
 
-  // Compute all boxes first, then check for overlaps and push apart
-  const boxes = [];
+  // Draw each group — skip trivial groups (a single node doesn't need a box)
   Object.values(groups).forEach(group => {
-    if (group.nodes.length < 2) return;
+    if (group.nodes.length < 2) return; // skip: no box for a lone node
+    // Measure actual rendered size per node — fixed estimates clipped taller nodes (item a)
     let minX = Infinity, minY = Infinity, maxRight = -Infinity, maxBottom = -Infinity;
     group.nodes.forEach(n => {
       const el = document.getElementById(`node-${n.id}`);
@@ -765,21 +600,13 @@ function renderGroupContainers(svg) {
       const nx = n.x || 0, ny = n.y || 0;
       minX = Math.min(minX, nx);
       minY = Math.min(minY, ny);
-      maxRight  = Math.max(maxRight,  nx + w);
+      maxRight  = Math.max(maxRight, nx + w);
       maxBottom = Math.max(maxBottom, ny + h);
     });
-    boxes.push({
-      label: group.label,
-      x: minX - PAD,
-      y: minY - PAD - HEADER_H,
-      w: (maxRight - minX) + PAD * 2,
-      h: (maxBottom - minY) + PAD * 2 + HEADER_H,
-    });
-  });
-
-  // Draw all boxes
-  boxes.forEach(box => {
-    const { x, y, w, h, label } = box;
+    const x = minX - PAD;
+    const y = minY - PAD - HEADER_H;
+    const w = (maxRight - minX) + PAD * 2;
+    const h = (maxBottom - minY) + PAD * 2 + HEADER_H;
 
     // Outer box
     const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -792,7 +619,7 @@ function renderGroupContainers(svg) {
     rect.setAttribute('stroke-dasharray', '7 3');
     svg.appendChild(rect);
 
-    // Header band — sits fully above first node (HEADER_H reserved in layout)
+    // Header band
     const hdr = document.createElementNS('http://www.w3.org/2000/svg','rect');
     hdr.setAttribute('x', x); hdr.setAttribute('y', y);
     hdr.setAttribute('width', w); hdr.setAttribute('height', HEADER_H);
@@ -800,16 +627,15 @@ function renderGroupContainers(svg) {
     hdr.setAttribute('fill', 'rgba(46,60,88,0.75)');
     svg.appendChild(hdr);
 
-    // Label — vertically centred in header band
+    // Label
     const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
-    lbl.setAttribute('x', x + 14);
-    lbl.setAttribute('y', y + HEADER_H/2 + 4); // centred in header band
+    lbl.setAttribute('x', x + 14); lbl.setAttribute('y', y + 17);
     lbl.setAttribute('font-size', '11');
     lbl.setAttribute('font-family', 'IBM Plex Mono, monospace');
     lbl.setAttribute('font-weight', '600');
     lbl.setAttribute('letter-spacing', '0.1em');
     lbl.setAttribute('fill', '#9aaac8');
-    lbl.textContent = (label || '').toUpperCase();
+    lbl.textContent = (group.label || '').toUpperCase();
     svg.appendChild(lbl);
   });
 }
@@ -861,110 +687,146 @@ function renderConnections() {
 
 function drawConnection(conn, svg, geom, crossings) {
   if (!geom) return;
-  const { x1,y1,x2,y2, isBack, isLoop, isSameRowBack, isWrapDown, fn,tn,fw,fh,tw,th,GAP } = geom;
+  const { x1,y1,x2,y2, isBack, isLoop, fn,tn,fw,fh,tw,th,GAP } = geom;
 
   const styleMap = { sequence:'seq', dependency:'dep', loop:'loop', yes:'yes', no:'no' };
   const cs = CONN_STYLES[conn.type]||CONN_STYLES.sequence;
   const markerId = 'arr-'+(styleMap[conn.type]||'seq');
-
-  // CON-04: immediate upstream = red, immediate downstream = bright blue, path = teal/coral
   const isHighlighted = conn._highlighted;
-  const isImmediate = conn._immediateHighlight;
-  const strokeColor = isImmediate==='downstream' ? '#4d79ff'
-    : isImmediate==='upstream' ? '#ff4d4d'
-    : isHighlighted==='forward' ? 'var(--teal)'
-    : isHighlighted==='backward' ? 'var(--coral)'
-    : cs.color;
-  const strokeWidth = isImmediate ? '2.5' : isHighlighted ? '2' : '1.5';
+  const strokeColor = isHighlighted==='forward'?'var(--teal)':isHighlighted==='backward'?'var(--coral)':cs.color;
+  const strokeWidth = isHighlighted ? '2.5' : '1.5';
+  const HOP_R = 7; // bridge hop radius
 
-  function drawPath(d, markerEnd) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d', d);
-    path.setAttribute('stroke', strokeColor);
-    path.setAttribute('stroke-width', strokeWidth);
-    if (cs.dash) path.setAttribute('stroke-dasharray', cs.dash);
-    path.setAttribute('fill','none');
-    if (markerEnd !== false) path.setAttribute('marker-end',`url(#${markerId})`);
-    path.style.cursor='pointer';
-    path.addEventListener('click',()=>selectConnection(conn));
-    svg.appendChild(path);
-  }
-
-  // ── LOOP: soft bezier arc above, top→top ──
-  if (isLoop) {
-    const lx1=fn.x+fw/2, ly1=fn.y;
-    const lx2=tn.x+tw/2, ly2=tn.y;
-    const loopY = Math.min(ly1,ly2) - 60;
-    // Cubic bezier: start top, curve high above, arrive top of target
-    const d = `M${lx1} ${ly1} C${lx1} ${loopY} ${lx2} ${loopY} ${lx2} ${ly2}`;
-    drawPath(d);
-    addSvgLabel(svg,(lx1+lx2)/2, loopY-10, 'loop-back', cs.color);
-    return;
-  }
-
-  // ── ROW-WRAP: bottom-centre → orthogonal rounded → top-centre ──
-  if (isWrapDown) {
-    const ox1 = fn.x + fw/2, oy1 = fn.y + fh;
-    const ox2 = tn.x + tw/2, oy2 = tn.y;
-    const routeY = geom.routeY || (oy1 + oy2) / 2;
-    const R = 10;
-    const d = `M${ox1} ${oy1}
-      L${ox1} ${routeY - R} Q${ox1} ${routeY} ${ox1 + R} ${routeY}
-      L${ox2 - R} ${routeY} Q${ox2} ${routeY} ${ox2} ${routeY - R}
-      L${ox2} ${oy2}`.replace(/\n\s+/g,' ');
-    drawPath(d);
-    return;
-  }
-
-  // ── SAME-ROW BACK: right-centre → orthogonal rounded arc above → top-centre ──
-  if (isSameRowBack) {
-    const ex = fn.x + fw,    ey = fn.y + fh/2;
-    const tx = tn.x + tw/2,  ty = tn.y;
-    const arcY = Math.min(fn.y, tn.y) - 50;
-    const R = 12;
-    // Orthogonal: right → up → left → down into top of target, rounded corners
-    const d = `M${ex} ${ey}
-      L${ex + R} ${ey} Q${ex + R*2} ${ey} ${ex + R*2} ${ey - R}
-      L${ex + R*2} ${arcY + R} Q${ex + R*2} ${arcY} ${ex + R} ${arcY}
-      L${tx + R} ${arcY} Q${tx} ${arcY} ${tx} ${arcY + R}
-      L${tx} ${ty}`.replace(/\n\s+/g,' ');
-    drawPath(d);
-    const lbl = conn.label||cs.label;
-    if (lbl) addSvgLabel(svg,(ex+tx)/2, arcY-8, lbl, cs.color);
-    return;
-  }
-
-  // ── NORMAL FORWARD: right-centre → soft bezier → left-centre ──
-  const dx = Math.abs(x2-x1);
-  const cx = dx > 80 ? dx*0.45 : 60;
-  const dStr = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
-  drawPath(dStr);
-
-  // Standard flowchart crossing — small hop arc (semicircle) where connectors cross
-  if (crossings && crossings.length) {
-    const HOP_R = 6;
-    crossings.forEach(pt => {
-      const ang = Math.atan2(y2 - y1, x2 - x1);
-      const bx1 = pt.x - Math.cos(ang)*HOP_R, by1 = pt.y - Math.sin(ang)*HOP_R;
-      const bx2 = pt.x + Math.cos(ang)*HOP_R, by2 = pt.y + Math.sin(ang)*HOP_R;
-      // Erase background under arc so it reads cleanly
+  // ── Helper: draw a path string with hop bridges at crossing points ──
+  function drawWithBridges(dStr, crossPts, isStraightSeg, segObj) {
+    if (!crossPts || crossPts.length === 0) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', dStr);
+      path.setAttribute('stroke', strokeColor); path.setAttribute('stroke-width', strokeWidth);
+      if (cs.dash) path.setAttribute('stroke-dasharray', cs.dash);
+      path.setAttribute('fill','none'); path.setAttribute('marker-end',`url(#${markerId})`);
+      path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
+      svg.appendChild(path);
+      return;
+    }
+    // Sort crossings along the segment direction
+    const sorted = [...crossPts].sort((a,b) => {
+      if (segObj) {
+        const da = (a.x-segObj.x1)**2+(a.y-segObj.y1)**2;
+        const db = (b.x-segObj.x1)**2+(b.y-segObj.y1)**2;
+        return da-db;
+      }
+      return (a.x-x1)**2+(a.y-y1)**2 - ((b.x-x1)**2+(b.y-y1)**2);
+    });
+    // Build path with bridge arcs
+    // Direction of segment for computing hop offset
+    const ang = segObj ? Math.atan2(segObj.y2-segObj.y1, segObj.x2-segObj.x1) : Math.atan2(y2-y1,x2-x1);
+    let d = dStr;
+    // For straight bezier: rebuild with breaks
+    // Simpler: draw background (gap) then arc on top
+    sorted.forEach(pt => {
+      // White gap (background colour erase)
       const gap = document.createElementNS('http://www.w3.org/2000/svg','circle');
       gap.setAttribute('cx', pt.x); gap.setAttribute('cy', pt.y);
-      gap.setAttribute('r', HOP_R + 1);
-      gap.setAttribute('fill', 'var(--bg0, #07090c)');
+      gap.setAttribute('r', HOP_R+1); gap.setAttribute('fill','var(--bg1,#0e1117)');
       svg.appendChild(gap);
-      // Hop arc
+      // Arc bridge
+      const sweep = 1;
+      const bx1 = pt.x - Math.cos(ang)*HOP_R, by1 = pt.y - Math.sin(ang)*HOP_R;
+      const bx2 = pt.x + Math.cos(ang)*HOP_R, by2 = pt.y + Math.sin(ang)*HOP_R;
       const arc = document.createElementNS('http://www.w3.org/2000/svg','path');
-      arc.setAttribute('d', `M${bx1} ${by1} A${HOP_R} ${HOP_R} 0 0 1 ${bx2} ${by2}`);
-      arc.setAttribute('stroke', strokeColor);
-      arc.setAttribute('stroke-width', strokeWidth);
-      arc.setAttribute('fill', 'none');
+      arc.setAttribute('d',`M${bx1} ${by1} A${HOP_R} ${HOP_R} 0 0 ${sweep} ${bx2} ${by2}`);
+      arc.setAttribute('stroke', strokeColor); arc.setAttribute('stroke-width', strokeWidth);
+      arc.setAttribute('fill','none');
       svg.appendChild(arc);
     });
   }
 
-  const lbl = conn.label||cs.label;
-  if (lbl) addSvgLabel(svg,(x1+x2)/2,(y1+y2)/2-8, lbl, cs.color);
+  // ── LOOP connection — orthogonal ──
+  if (isLoop) {
+    const lx1=fn.x+fw/2, ly1=fn.y, lx2=tn.x+tw/2, ly2=tn.y;
+    const loopY = Math.min(ly1,ly2)-50;
+    const d = `M${lx1} ${ly1} L${lx1} ${loopY} L${lx2} ${loopY} L${lx2} ${ly2}`;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',d); path.setAttribute('stroke',strokeColor); path.setAttribute('stroke-width',strokeWidth);
+    path.setAttribute('stroke-dasharray',cs.dash||''); path.setAttribute('fill','none');
+    path.setAttribute('marker-end',`url(#${markerId})`);
+    path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
+    svg.appendChild(path);
+    addSvgLabel(svg,(lx1+lx2)/2,loopY-8,'loop-back',cs.color);
+    return;
+  }
+
+  // ── BACK-ROUTE — orthogonal elbow ──
+  if (isBack) {
+    let d;
+    if (geom.isWrapDown) {
+      // Exit bottom of source, clear below all shapes in path, enter bottom of target
+      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;
+      const ox2 = tn.x + tw/2, oy2 = tn.y + th;
+      let maxBottom = Math.max(oy1, oy2);
+      State.nodes.forEach(n => {
+        if (n.y >= fn.y && n.y <= tn.y) {
+          const el = document.getElementById(`node-${n.id}`);
+          const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+          maxBottom = Math.max(maxBottom, (n.y||0) + nh);
+        }
+      });
+      const clearY = maxBottom + 30;
+      d = `M${ox1} ${oy1} L${ox1} ${clearY} L${ox2} ${clearY} L${ox2} ${oy2}`;
+    } else {
+      // Same-row back-route — arc above
+      const stubX = Math.max(x1, tn.x+tw)+GAP+30;
+      const routeY = Math.min(fn.y, tn.y) - 40;
+      d = `M${x1} ${y1} L${stubX} ${y1} L${stubX} ${routeY} L${x2-GAP} ${routeY} L${x2-GAP} ${y2} L${x2} ${y2}`;
+    }
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',d); path.setAttribute('stroke',strokeColor); path.setAttribute('stroke-width',strokeWidth);
+    if (cs.dash) path.setAttribute('stroke-dasharray',cs.dash);
+    path.setAttribute('fill','none'); path.setAttribute('marker-end',`url(#${markerId})`);
+    path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
+    svg.appendChild(path);
+    const lbl=conn.label||cs.label;
+    if (lbl) addSvgLabel(svg,(x1+x2)/2,y1-6,lbl,cs.color);
+    return;
+  }
+
+  // ── NORMAL — soft bezier with crossing bridges ──
+  const dx = Math.abs(x2-x1);
+  const cx = dx > 80 ? dx*0.45 : 60;
+  const dStr = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
+
+  // Draw base bezier first
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', dStr);
+  path.setAttribute('stroke', strokeColor); path.setAttribute('stroke-width', strokeWidth);
+  if (cs.dash) path.setAttribute('stroke-dasharray', cs.dash);
+  path.setAttribute('fill','none'); path.setAttribute('marker-end',`url(#${markerId})`);
+  path.style.cursor='pointer'; path.addEventListener('click',()=>selectConnection(conn));
+  svg.appendChild(path);
+
+  // Draw bridges on top
+  if (crossings.length) {
+    crossings.forEach(pt => {
+      const ang = Math.atan2(y2-y1, x2-x1);
+      // Erase gap
+      const gap = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      gap.setAttribute('cx',pt.x); gap.setAttribute('cy',pt.y);
+      gap.setAttribute('r',HOP_R+1); gap.setAttribute('fill','var(--bg1,#0e1117)');
+      svg.appendChild(gap);
+      // Bridge arc
+      const bx1=pt.x-Math.cos(ang)*HOP_R, by1=pt.y-Math.sin(ang)*HOP_R;
+      const bx2=pt.x+Math.cos(ang)*HOP_R, by2=pt.y+Math.sin(ang)*HOP_R;
+      const arc = document.createElementNS('http://www.w3.org/2000/svg','path');
+      arc.setAttribute('d',`M${bx1} ${by1} A${HOP_R} ${HOP_R} 0 0 1 ${bx2} ${by2}`);
+      arc.setAttribute('stroke',strokeColor); arc.setAttribute('stroke-width',strokeWidth);
+      arc.setAttribute('fill','none');
+      svg.appendChild(arc);
+    });
+  }
+
+  const lbl=conn.label||cs.label;
+  if (lbl) addSvgLabel(svg,(x1+x2)/2,(y1+y2)/2-8,lbl,cs.color);
 }
 
 function addSvgLabel(svg,x,y,text,color) {
@@ -1005,11 +867,8 @@ function addNode(type, x, y) {
   State.nodes.push(node);
   State.lastNodeLevel = node.level;
   State.dirty = true;
-  bufferAudit('modified', `Step added: "${node.name}" [${type}]`, { field:'node', from:null, to:node.name });
   document.getElementById('empty-state').style.display = 'none';
   renderNode(node); renderConnections(); selectNode(node);
-  // LAY-10: recompute dept boundaries after every node add
-  enforceAllDeptGaps(); renderCanvas();
 }
 
 // ── NODE DRAG ─────────────────────────────────────
@@ -1050,62 +909,8 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
-  if (State.dragging) {
-    State.dirty = true;
-    State.dragging = null;
-    // LAY-03/07: reflow department bands after drag — box follows nodes, no clamping
-    reflowDepartmentBands();
-    renderCanvas();
-  }
-  State.panning = false;
-}
-
-function reflowDepartmentBands() {
-  const deptGroups = {};
-  State.nodes.forEach(n => {
-    if (!n.department || !n.department.trim()) return;
-    if (!deptGroups[n.department]) deptGroups[n.department] = [];
-    deptGroups[n.department].push(n);
-  });
-
-  const { PAD, HEADER_H, DEPT_GAP: VISUAL_GAP } = LAYOUT;
-  const NODE_H = LAYOUT.NODE_H, NODE_W = LAYOUT.NODE_W;
-
-  const bands = Object.entries(deptGroups).map(([dept, nodes]) => {
-    const xs = nodes.map(n => n.x || 0);
-    const ys = nodes.map(n => n.y || 0);
-    return {
-      dept, nodes,
-      left:   Math.min(...xs) - PAD,
-      right:  Math.max(...xs) + NODE_W + PAD,
-      top:    Math.min(...ys) - PAD - HEADER_H,
-      bottom: Math.max(...ys) + NODE_H + PAD,
-    };
-  });
-
-  let changed = true, passes = 0;
-  while (changed && passes++ < 20) {
-    changed = false;
-    for (let i = 0; i < bands.length; i++) {
-      for (let j = i+1; j < bands.length; j++) {
-        const a = bands[i], b = bands[j];
-        const overlapX = a.left < b.right + VISUAL_GAP && a.right + VISUAL_GAP > b.left;
-        const overlapY = a.top  < b.bottom + VISUAL_GAP && a.bottom + VISUAL_GAP > b.top;
-        if (overlapX && overlapY) {
-          const pushDown  = a.bottom + VISUAL_GAP - b.top;
-          const pushRight = a.right  + VISUAL_GAP - b.left;
-          if (pushDown <= pushRight) {
-            b.nodes.forEach(n => { n.y = (n.y||0) + pushDown; });
-            b.top += pushDown; b.bottom += pushDown;
-          } else {
-            b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
-            b.left += pushRight; b.right += pushRight;
-          }
-          changed = true;
-        }
-      }
-    }
-  }
+  if (State.dragging) { State.dirty=true; State.dragging=null; }
+  State.panning=false;
 }
 
 function applyTransform() {
@@ -1138,9 +943,7 @@ function addConnection(fromId, toId, type='sequence') {
   if (State.connections.find(c=>c.from===fromId&&c.to===toId&&c.type===type)) { notify('Connection already exists','error'); return; }
   pushUndo();
   State.connections.push({ id:'C-'+Date.now(), from:fromId, to:toId, type, label:'' });
-  State.dirty=true;
-  // LAY-10: recompute dept boundaries after connection add
-  enforceAllDeptGaps(); renderConnections();
+  State.dirty=true; renderConnections();
   notify(`${type} connection added`,'success');
 }
 
@@ -1421,14 +1224,8 @@ function renderConnPropsPanel(conn) {
 // ── UPDATE HELPERS ────────────────────────────────
 function upNode(id, key, value) {
   const node=State.nodes.find(n=>n.id===id); if (!node) return;
-  const oldVal = node[key];
   node[key]=value; if (key==='level') State.lastNodeLevel=value;
   State.dirty=true;
-  // N39: buffer field-level audit entry for meaningful fields only
-  const auditFields = ['name','type','responsible','accountable','classifications','monitoring','frequency','recordRequired','retentionPeriod','department'];
-  if (auditFields.includes(key) && String(oldVal) !== String(value)) {
-    bufferAudit('modified', `"${node.name}" — ${key} changed`, { field:key, from:oldVal??'—', to:value??'—' });
-  }
   const el=document.getElementById(`node-${id}`); if (el) el.remove();
   renderNode(node); renderConnections();
   const el2=document.getElementById(`node-${id}`);
@@ -1536,20 +1333,14 @@ function executeDelete() {
   pushUndo();
   if (State.selectedNode) {
     const id=State.selectedNode.id;
-    bufferAudit('deleted', `Step deleted: "${State.selectedNode.name}" [${State.selectedNode.type}]`, { field:'node', from:State.selectedNode.name, to:null });
     State.nodes=State.nodes.filter(n=>n.id!==id);
     State.connections=State.connections.filter(c=>c.from!==id&&c.to!==id);
-    State.dirty=true; clearSelection();
-    // LAY-10/11: recompute dept boundaries after delete (handles shrink too)
-    enforceAllDeptGaps(); renderCanvas();
+    State.dirty=true; clearSelection(); renderCanvas();
     if (!State.nodes.length) document.getElementById('empty-state').style.display='block';
     notify('Step deleted','info');
   } else if (State.selectedConn) {
-    bufferAudit('modified', `Connector deleted: ${State.selectedConn.type}`, { field:'connection', from:State.selectedConn.id, to:null });
     State.connections=State.connections.filter(c=>c.id!==State.selectedConn.id);
-    State.dirty=true; clearSelection();
-    // LAY-10: recompute after connector delete
-    enforceAllDeptGaps(); renderConnections();
+    State.dirty=true; clearSelection(); renderConnections();
     notify('Connection deleted','info');
   }
 }
@@ -1573,109 +1364,71 @@ function fitView() {
   State.offset.x=-Math.min(...xs)*State.scale+80; State.offset.y=-Math.min(...ys)*State.scale+80;
   applyTransform();
 }
-// ── LAYOUT CONSTANTS (single source of truth) ────
-const LAYOUT = {
-  GAP_X:    260,   // horizontal gap between nodes
-  GAP_Y:    160,   // vertical gap between rows
-  START_X:  80,
-  START_Y:  80,
-  NODE_W:   200,   // default node width estimate
-  NODE_H:   100,   // default node height estimate
-  MARGIN:   24,    // minimum gap between nodes
-  PAD:      36,    // dept box padding around nodes
-  HEADER_H: 36,    // dept box header band height
-  DEPT_GAP: 30,    // minimum gap between dept boxes
-};
-
-// Get real node dimensions from DOM, fallback to estimates
-function nodeSize(n) {
-  const el = document.getElementById(`node-${n.id}`);
-  return {
-    w: (el && el.offsetWidth  > 0) ? el.offsetWidth  : LAYOUT.NODE_W,
-    h: (el && el.offsetHeight > 0) ? el.offsetHeight : LAYOUT.NODE_H,
-  };
-}
-
-// Layout a group of nodes sequentially following connection order.
-// New rows continue from the X position of the last node in the previous row
-// (not reset to START_X) — keeps flow readable.
-function layoutGroup(nodes, originX, originY) {
-  if (!nodes.length) return originY;
-  const { GAP_X, GAP_Y, MARGIN, HEADER_H } = LAYOUT;
-  const effectiveY = originY + HEADER_H; // reserve header space above first node
-
-  // BFS order if connections exist, else original order
-  const ids = new Set(nodes.map(n => n.id));
-  const hasConns = State.connections.some(c => ids.has(c.from) && ids.has(c.to));
-  let ordered;
-  if (hasConns) {
-    const visited = new Set();
-    const roots = nodes.filter(n => !State.connections.some(c => c.to === n.id && ids.has(c.from)));
-    const queue = (roots.length ? roots : [nodes[0]]).map(n => n.id);
-    ordered = [];
-    while (queue.length) {
-      const id = queue.shift();
-      if (visited.has(id)) continue;
-      visited.add(id);
-      const node = nodes.find(n => n.id === id);
-      if (node) ordered.push(node);
-      State.connections.filter(c => c.from === id && ids.has(c.to)).forEach(c => queue.push(c.to));
-    }
-    nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
-  } else {
-    ordered = [...nodes];
-  }
-
-  // Place nodes — new row continues from rightmost position of previous row
-  let curX = originX, curY = effectiveY, rowMaxH = 0, colCount = 0;
-  const MAX_COLS = 4;
-  ordered.forEach((n, i) => {
-    const sz = nodeSize(n);
-    if (colCount > 0 && colCount % MAX_COLS === 0) {
-      // New row — start from current X (rightmost of last row), not origin
-      curX = originX; // reset to origin X for new row
-      curY += rowMaxH + LAYOUT.GAP_Y;
-      rowMaxH = 0;
-      colCount = 0;
-    }
-    n.x = curX;
-    n.y = curY;
-    curX += sz.w + GAP_X;
-    rowMaxH = Math.max(rowMaxH, sz.h);
-    colCount++;
-  });
-
-  // Collision pass — real sizes, push down only (maintain left-to-right order)
-  let changed = true, passes = 0;
-  while (changed && passes++ < 30) {
-    changed = false;
-    for (let i = 0; i < ordered.length; i++) {
-      for (let j = i + 1; j < ordered.length; j++) {
-        const a = ordered[i], b = ordered[j];
-        const szA = nodeSize(a), szB = nodeSize(b);
-        const overlapX = a.x < b.x + szB.w + MARGIN && a.x + szA.w + MARGIN > b.x;
-        const overlapY = a.y < b.y + szB.h + MARGIN && a.y + szA.h + MARGIN > b.y;
-        if (overlapX && overlapY) {
-          b.y = a.y + szA.h + MARGIN;
-          changed = true;
-        }
-      }
-    }
-  }
-
-  // Return actual bottom edge
-  return Math.max(...ordered.map(n => (n.y||0) + nodeSize(n).h));
-}
-
 function autoLayout() {
   if (!State.nodes.length) return;
   pushUndo();
 
-  const { START_X, START_Y, PAD, HEADER_H, DEPT_GAP } = LAYOUT;
-  const BAND_GAP = PAD * 2 + HEADER_H + DEPT_GAP;
+  const GAP_X    = 260;
+  const GAP_Y    = 160;
+  const START_X  = 80;
+  const START_Y  = 80;
+  const MAX_COLS = 4;
+  // Group container padding is PAD(40) + HEADER_H(28) per side — band gap must
+  // clear both containers' padding plus a genuine ~8mm visual gap (~30px @96dpi)
+  // between the two boxes, not just between raw node positions.
+  const CONTAINER_PAD = 40 + 28; // matches renderGroupContainers PAD+HEADER_H
+  const VISUAL_GAP_8MM = 30;     // ~8mm at standard 96dpi screen resolution
+  const BAND_GAP = (CONTAINER_PAD * 2) + VISUAL_GAP_8MM;
 
+  function layoutGroup(nodes, originY) {
+    // BFS depth within this subset only (using connections that touch these nodes)
+    const ids = new Set(nodes.map(n => n.id));
+    const depth = {};
+    nodes.forEach(n => depth[n.id] = 0);
+    const roots = nodes.filter(n => !State.connections.some(c => c.to === n.id && ids.has(c.from)));
+    const queue = (roots.length ? roots : [nodes[0]]).map(n => ({ id: n.id, d: 0 }));
+    const visited = new Set();
+    while (queue.length) {
+      const { id, d } = queue.shift();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      depth[id] = Math.max(depth[id] || 0, d);
+      State.connections.filter(c => c.from === id && ids.has(c.to)).forEach(c => queue.push({ id: c.to, d: d + 1 }));
+    }
+    const sorted = [...nodes].sort((a, b) => (depth[a.id]||0) - (depth[b.id]||0));
+    const maxDepth = Math.max(...sorted.map(n => depth[n.id] || 0));
+
+    let maxRowUsed = 0;
+    if (maxDepth < MAX_COLS) {
+      const cols = {};
+      sorted.forEach(n => {
+        const col = depth[n.id] || 0;
+        if (!cols[col]) cols[col] = [];
+        cols[col].push(n);
+      });
+      Object.entries(cols).forEach(([col, colNodes]) => {
+        colNodes.forEach((n, row) => {
+          n.x = START_X + Number(col) * GAP_X;
+          n.y = originY + row * GAP_Y;
+          maxRowUsed = Math.max(maxRowUsed, row);
+        });
+      });
+    } else {
+      sorted.forEach((n, i) => {
+        const col = i % MAX_COLS;
+        const row = Math.floor(i / MAX_COLS);
+        n.x = START_X + col * GAP_X;
+        n.y = originY + row * GAP_Y;
+        maxRowUsed = Math.max(maxRowUsed, row);
+      });
+    }
+    return originY + (maxRowUsed + 1) * GAP_Y; // next free Y
+  }
+
+  // If departments are present on ≥2 nodes, reserve a band per department —
+  // prevents group containers from overlapping (OBS: messy layout / overlapping boxes)
   const deptGroups = {};
-  const undeptNodes = [];
+  let undeptNodes = [];
   State.nodes.forEach(n => {
     if (n.department && n.department.trim()) {
       if (!deptGroups[n.department]) deptGroups[n.department] = [];
@@ -1686,209 +1439,23 @@ function autoLayout() {
   });
 
   const deptKeys = Object.keys(deptGroups);
-  const useHorizontal = deptKeys.length >= 2 && deptKeys.length <= 3 &&
-    deptKeys.every(d => deptGroups[d].length <= 5);
-
-  function runLayout() {
-    if (deptKeys.length >= 2) {
-      if (useHorizontal) {
-        let x = START_X;
-        deptKeys.forEach(dept => {
-          const nodes = deptGroups[dept];
-          layoutGroup(nodes, x, START_Y);
-          const maxRight = Math.max(...nodes.map(n => (n.x||0) + nodeSize(n).w));
-          x = maxRight + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
-      } else {
-        let y = START_Y;
-        deptKeys.forEach(dept => {
-          y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
-      }
-    } else {
-      layoutGroup(State.nodes, START_X, START_Y);
-    }
+  if (deptKeys.length >= 2) {
+    let y = START_Y;
+    deptKeys.forEach(dept => {
+      y = layoutGroup(deptGroups[dept], y) + BAND_GAP;
+    });
+    if (undeptNodes.length) layoutGroup(undeptNodes, y);
+  } else {
+    // No meaningful department split — single layout pass
+    layoutGroup(State.nodes, START_Y);
   }
-
-  // Pass 1 — initial placement with estimated sizes
-  runLayout();
-  renderCanvas(); // render so DOM elements exist with real sizes
-
-  // Pass 2 — re-run collision with real DOM sizes now available
-  runLayout();
-  enforceAllDeptGaps();
 
   State.dirty = true;
   renderCanvas();
   notify('Layout applied', 'success');
 }
 
-// Unified dept gap enforcement — push AND pull, all 4 sides
-// Used by both autoLayout and post-drag reflow
-function enforceAllDeptGaps() {
-  const { PAD, HEADER_H, DEPT_GAP } = LAYOUT;
-  const MIN_GAP = DEPT_GAP;
-  const MAX_GAP = DEPT_GAP + 20; // tolerated maximum before pulling together
-
-  const deptGroups = {};
-  State.nodes.forEach(n => {
-    if (!n.department || !n.department.trim()) return;
-    if (!deptGroups[n.department]) deptGroups[n.department] = [];
-    deptGroups[n.department].push(n);
-  });
-
-  function getBBox(nodes) {
-    let minX = Infinity, minY = Infinity, maxR = -Infinity, maxB = -Infinity;
-    nodes.forEach(n => {
-      const sz = nodeSize(n);
-      minX = Math.min(minX, n.x||0);
-      minY = Math.min(minY, n.y||0);
-      maxR = Math.max(maxR, (n.x||0) + sz.w);
-      maxB = Math.max(maxB, (n.y||0) + sz.h);
-    });
-    return { left: minX - PAD, top: minY - PAD - HEADER_H, right: maxR + PAD, bottom: maxB + PAD };
-  }
-
-  const depts = Object.entries(deptGroups).map(([dept, nodes]) => ({ dept, nodes, ...getBBox(nodes) }));
-
-  let changed = true, passes = 0;
-  while (changed && passes++ < 25) {
-    changed = false;
-    for (let i = 0; i < depts.length; i++) {
-      for (let j = i + 1; j < depts.length; j++) {
-        const a = depts[i], b = depts[j];
-        // Recompute each iteration since nodes moved
-        Object.assign(a, getBBox(a.nodes));
-        Object.assign(b, getBBox(b.nodes));
-
-        const gapX_ab = b.left - a.right;   // gap between a's right and b's left
-        const gapY_ab = b.top  - a.bottom;  // gap between a's bottom and b's top
-        const overlapX = a.left < b.right && a.right > b.left;
-        const overlapY = a.top  < b.bottom && a.bottom > b.top;
-
-        if (overlapX && overlapY) {
-          // Overlapping — push apart
-          const pushDown  = a.bottom + MIN_GAP - b.top;
-          const pushRight = a.right  + MIN_GAP - b.left;
-          if (pushDown <= pushRight) {
-            b.nodes.forEach(n => { n.y = (n.y||0) + pushDown; });
-          } else {
-            b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
-          }
-          changed = true;
-        } else if (!overlapX && !overlapY) {
-          // LAY-11: both axes clear — pull if too far apart (bidirectional shrink)
-          if (gapY_ab > MAX_GAP && Math.abs(gapX_ab) < MAX_GAP * 3) {
-            const pull = gapY_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
-            changed = true;
-          } else if (gapX_ab > MAX_GAP && Math.abs(gapY_ab) < MAX_GAP * 3) {
-            const pull = gapX_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-}
-
-function reflowDepartmentBands() {
-  enforceAllDeptGaps();
-}
-
-// computeDeptBounds kept for compatibility
-function computeDeptBounds() {
-  const { PAD, HEADER_H } = LAYOUT;
-  const bounds = {};
-  State.nodes.forEach(n => {
-    if (!n.department || !n.department.trim()) return;
-    if (!bounds[n.department]) bounds[n.department] = { left:Infinity, top:Infinity, right:-Infinity, bottom:-Infinity, nodes:[] };
-    const b = bounds[n.department];
-    const sz = nodeSize(n);
-    b.nodes.push(n);
-    b.left   = Math.min(b.left,   (n.x||0) - PAD);
-    b.top    = Math.min(b.top,    (n.y||0) - PAD - HEADER_H);
-    b.right  = Math.max(b.right,  (n.x||0) + sz.w + PAD);
-    b.bottom = Math.max(b.bottom, (n.y||0) + sz.h + PAD);
-  });
-  return bounds;
-}
-
-function exportCanvasPDF() {
-  if (!State.currentProcess) return;
-  const p = State.currentProcess;
-
-  // Get canvas bounds
-  const allX = State.nodes.map(n => n.x||0);
-  const allY = State.nodes.map(n => n.y||0);
-  if (!allX.length) { notify('No steps on canvas to export','error'); return; }
-  const minX = Math.min(...allX) - 60;
-  const minY = Math.min(...allY) - 60;
-  const maxX = Math.max(...allX) + 300;
-  const maxY = Math.max(...allY) + 200;
-  const W = maxX - minX;
-  const H = maxY - minY;
-
-  // Clone SVG (connectors + group containers)
-  const svgEl = document.getElementById('canvas-svg');
-  const svgClone = svgEl ? svgEl.cloneNode(true) : document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svgClone.setAttribute('viewBox', `${minX} ${minY} ${W} ${H}`);
-  svgClone.setAttribute('width', W);
-  svgClone.setAttribute('height', H);
-
-  // Clone node HTML elements as foreign objects won't work in print — snapshot as SVG text labels
-  const nodesSVG = State.nodes.map(n => {
-    const el = document.getElementById(`node-${n.id}`);
-    const w = el ? el.offsetWidth : 172;
-    const h = el ? el.offsetHeight : 80;
-    const col = NODE_COLORS[n.type]||NODE_COLORS.process;
-    return `
-      <rect x="${n.x}" y="${n.y}" width="${w}" height="${h}" rx="5"
-        fill="#131824" stroke="${col.border||col.text||'#0db89e'}" stroke-width="1.5"/>
-      <text x="${n.x+10}" y="${n.y+18}" font-size="9" fill="${col.text||'#0db89e'}"
-        font-family="IBM Plex Mono,monospace" font-weight="600">${n.stepId||n.id}</text>
-      <text x="${n.x+10}" y="${n.y+33}" font-size="11" fill="#f0f3f8"
-        font-family="IBM Plex Mono,monospace" font-weight="500"
-        textLength="${w-20}" lengthAdjust="spacingAndGlyphs">${(n.name||'').slice(0,28)}</text>
-      <text x="${n.x+10}" y="${n.y+47}" font-size="9" fill="#9aaac8"
-        font-family="IBM Plex Mono,monospace">${n.type.toUpperCase()} · ${n.responsible||'—'}</text>`;
-  }).join('');
-
-  const fullSVG = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${W} ${H}" width="${W}" height="${H}">
-  <rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#07090c"/>
-  ${svgClone.innerHTML}
-  ${nodesSVG}
-</svg>`;
-
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html><head>
-    <title>${p.name} — MERIDIAN Process Blueprint</title>
-    <style>
-      body { margin:0; background:#07090c; }
-      .header { font-family:monospace; color:#9aaac8; padding:16px 24px; border-bottom:1px solid #2e3c58; display:flex; justify-content:space-between; }
-      .header h1 { color:#f0f3f8; font-size:16px; margin:0 0 4px; }
-      .header p { margin:0; font-size:11px; }
-      svg { display:block; max-width:100%; }
-      @media print {
-        .no-print { display:none; }
-        body { background:white; }
-        svg { filter:invert(1) hue-rotate(180deg); }
-      }
-    </style>
-  </head><body>
-    <div class="header">
-      <div><h1>${p.name}</h1><p>${p.processId||'—'} · ${p.function||'—'} · v${p.version||1} · ${new Date().toLocaleDateString('en-GB')}</p></div>
-      <button class="no-print" onclick="window.print()" style="background:#f0a500;border:none;border-radius:5px;color:#07090c;font-weight:700;padding:8px 18px;cursor:pointer;font-size:13px;">PRINT / SAVE PDF</button>
-    </div>
-    ${fullSVG}
-  </body></html>`);
-  win.document.close();
-  notify('PDF preview opened — use Print to save as PDF','success');
-}
+// ── EXPORT SOP ────────────────────────────────────
 function exportSOP() {
   if (!State.currentProcess) return;
   const p=State.currentProcess;
@@ -2050,21 +1617,12 @@ const LAYER_FILTERS = {
   'monitoring-view':{ nodeTypes: null, monitoringFilter: true },
 };
 let activeLayerFilter = 'all';
-let activeLevelFilter = 'all';
 
 function setLayerFilter(key) {
   activeLayerFilter = key;
-  document.querySelectorAll('#layer-filter .lf-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.filter === key);
-  });
-  applyLayerFilter();
-}
-
-// Item 5 — Level layer filter
-function setLevelFilter(key) {
-  activeLevelFilter = key;
-  document.querySelectorAll('#level-filter .lf-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.level === key);
+  document.querySelectorAll('.lf-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.dataset.filter === key) b.classList.add('active');
   });
   applyLayerFilter();
 }
@@ -2076,45 +1634,11 @@ function applyLayerFilter() {
     const el = document.getElementById(`node-${n.id}`);
     if (!el) return;
     let show = true;
-    // Classification/type filter
     if (f.nodeTypes && !f.nodeTypes.includes(n.type)) show = false;
     if (f.inputTypeFilter && n.inputType !== f.inputTypeFilter) show = false;
     if (f.monitoringFilter && !n.monitoring) show = false;
-    // Level filter
-    if (activeLevelFilter !== 'all') {
-      if (activeLevelFilter === 'L5') {
-        // L5+ means L5, L6, L7, L8
-        const lvl = parseInt((n.level||'L4').slice(1));
-        if (lvl < 5) show = false;
-      } else {
-        if (n.level !== activeLevelFilter) show = false;
-      }
-    }
-    el.style.opacity = show ? '1' : '0.12';
+    el.style.opacity = show ? '1' : '0.15';
     el.style.pointerEvents = show ? '' : 'none';
-  });
-}
-
-// Item 3 — Adjacent node highlight: selected + immediate next + immediate prior
-function highlightAdjacentNodes(nodeId) {
-  const nextIds  = new Set(State.connections.filter(c => c.from === nodeId).map(c => c.to));
-  const priorIds = new Set(State.connections.filter(c => c.to   === nodeId).map(c => c.from));
-  State.nodes.forEach(n => {
-    const el = document.getElementById(`node-${n.id}`);
-    if (!el) return;
-    if (n.id === nodeId) {
-      el.style.boxShadow = '0 0 0 2.5px var(--amber)';
-      el.style.opacity = '1';
-    } else if (nextIds.has(n.id)) {
-      el.style.boxShadow = '0 0 0 2px #4d79ff';
-      el.style.opacity = '1';
-    } else if (priorIds.has(n.id)) {
-      el.style.boxShadow = '0 0 0 2px #ff4d4d';
-      el.style.opacity = '1';
-    } else {
-      el.style.boxShadow = '';
-      el.style.opacity = '0.25';
-    }
   });
 }
 
@@ -2134,14 +1658,7 @@ function toggleFloatPanel(name) {
   if (!visible && name === 'arco') {
     const feed = document.getElementById('float-arco-feed');
     if (feed && feed.children.length === 0 && typeof appendFloatArcoMsg === 'function') {
-      // N64: sync float feed from main feed on open
-      const mainFeed = document.getElementById('arco-feed');
-      const floatFeed = document.getElementById('float-arco-feed');
-      if (floatFeed && mainFeed) {
-        if (mainFeed.children.length === 0 && typeof arcoGreet === 'function') arcoGreet();
-        floatFeed.innerHTML = mainFeed.innerHTML;
-        floatFeed.scrollTop = floatFeed.scrollHeight;
-      }
+      appendFloatArcoMsg('assistant', `Hello. I'm **ARCŌ** — ask me about this process or describe steps to add.`);
     }
   }
 }
@@ -2231,7 +1748,7 @@ function highlightPath(nodeId) {
   if (!nodeId) return;
   const forward  = getForwardPath(nodeId);
   const backward = getBackwardPath(nodeId);
-
+  // Dim non-path nodes
   State.nodes.forEach(n => {
     const el = document.getElementById(`node-${n.id}`);
     if (!el) return;
@@ -2241,24 +1758,11 @@ function highlightPath(nodeId) {
       el.style.opacity = '0.2'; el.style.filter = 'grayscale(1)';
     }
   });
-
-  // CON-04: immediate upstream = red (#ff4d4d), immediate downstream = bright blue (#4d79ff)
-  // Path = teal/coral; rest = default
-  const immediateDown = State.connections.filter(c => c.from === nodeId);
-  const immediateUp   = State.connections.filter(c => c.to   === nodeId);
-  const immediateDownIds = new Set(immediateDown.map(c => c.id));
-  const immediateUpIds   = new Set(immediateUp.map(c => c.id));
-
+  // Colour connections
   State.connections.forEach(c => {
-    c._immediateHighlight = immediateDownIds.has(c.id) ? 'downstream'
-      : immediateUpIds.has(c.id) ? 'upstream' : null;
-    if (!c._immediateHighlight) {
-      if (forward.has(c.to) && (c.from === nodeId || forward.has(c.from))) c._highlighted = 'forward';
-      else if (backward.has(c.from) && (c.to === nodeId || backward.has(c.to))) c._highlighted = 'backward';
-      else c._highlighted = null;
-    } else {
-      c._highlighted = null;
-    }
+    if (forward.has(c.to) && (c.from === nodeId || forward.has(c.from))) c._highlighted = 'forward';
+    else if (backward.has(c.from) && (c.to === nodeId || backward.has(c.to))) c._highlighted = 'backward';
+    else c._highlighted = null;
   });
   renderConnections();
 }
@@ -2268,7 +1772,7 @@ function clearPathHighlight() {
     const el = document.getElementById(`node-${n.id}`);
     if (el) { el.style.opacity = '1'; el.style.filter = ''; }
   });
-  State.connections.forEach(c => { c._highlighted = null; c._immediateHighlight = null; });
+  State.connections.forEach(c => c._highlighted = null);
 }
 
 // Override selectNode to trigger path highlight
@@ -2276,7 +1780,6 @@ const _origSelectNode = selectNode;
 window.selectNode = function(node) {
   _origSelectNode(node);
   highlightPath(node.id);
-  highlightAdjacentNodes(node.id); // Item 3 — adjacent nodes highlighted
   if (typeof MeridianBus !== 'undefined') MeridianBus.emit('promap:node-selected', { node, nodes: window.State.nodes, connections: window.State.connections });
 };
 

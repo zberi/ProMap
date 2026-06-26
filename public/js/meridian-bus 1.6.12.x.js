@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — Event Bus v1.6.13
+   MERIDIAN — Event Bus
    Module independence enforced via pub/sub
-   Updated: 2026-06-25
+   Modules communicate only through this bus
    ═══════════════════════════════════════════════ */
 
 window.MeridianBus = {
@@ -25,7 +25,7 @@ window.MeridianBus = {
 };
 
 /* ── DEFINED EVENTS ──────────────────────────────
-  promap:process-loaded      { process, nodes, connections }
+  promap:process-loaded      { process }
   promap:blueprint-changed   { process, nodes, connections }
   promap:node-selected       { node, nodes, connections }
   promap:node-deselected     {}
@@ -36,5 +36,4 @@ window.MeridianBus = {
   cortex:suggestion-accepted { suggestionId, nodeId, changes }
   cortex:suggestion-rejected { suggestionId, reason }
   promap:suggestion-applied  { suggestionId }
-  audit:entry                { processId, event, detail, source }
 ─────────────────────────────────────────────── */

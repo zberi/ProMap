@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — ARCŌ Conversational Intake v1.6.13
-   v1.6.13: LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — ARCŌ Conversational Intake v1.6.11
+   Fixes: BUG-02/03/04 panel refresh + dedup; N61 connector reliability
    ═══════════════════════════════════════════════ */
 
 const ARCO = {
@@ -405,17 +405,8 @@ function doInsertToPromap(replaceAll) {
   }
   const empty = document.getElementById('empty-state');
   if (empty) empty.style.display = 'none';
-  // LAY-12: switch to PROMAP view FIRST so DOM renders nodes before autoLayout measures them
   if (typeof switchToPromap === 'function') switchToPromap();
-  if (typeof renderCanvas === 'function') renderCanvas(); // initial render — nodes exist in DOM
-  if (typeof autoLayout === 'function') {
-    // Pass 1 — immediate (estimated sizes)
-    autoLayout();
-    // Pass 2 — deferred (real DOM sizes now available after first render)
-    setTimeout(() => {
-      if (typeof autoLayout === 'function') autoLayout();
-    }, 120);
-  }
+  if (typeof autoLayout === 'function') autoLayout(); // single layout pass — positions + renders
   if (typeof notify === 'function') notify(`${stepsToInsert.length} steps sent to PROMAP`, 'success');
   appendMessage('assistant', `✓ ${stepsToInsert.length} steps sent to PROMAP canvas.`);
 }

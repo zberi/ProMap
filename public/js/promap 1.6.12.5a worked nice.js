@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — PROMAP Engine v1.6.13
-   v1.6.13: LAY-10 dept boundary recompute on add/delete/connect
-            LAY-11 bidirectional dept gap pull fixed
-            LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — PROMAP Engine v1.6.11
+   Fixes: N51 layer filter; N76 save guard; N78 pedigree guard; N79 verified
+   N39/N62: Audit trail — field-level change capture, viewer panel
    ═══════════════════════════════════════════════ */
 
 window.State = {
@@ -635,20 +634,10 @@ function getConnGeometry(conn) {
   }
 
   // Normal forward: right-centre (below title) → left-centre
-  // Clearance from dept boundary edges — shift exit/entry Y if too close to boundary
-  const { PAD: CPPAD } = LAYOUT;
-  const deptBounds = computeDeptBounds();
-  let adjY1 = fn.y + Math.max(fh/2, 24);
-  let adjY2 = tn.y + Math.max(th/2, 24);
-  // If exit point is within PAD of any dept boundary top or bottom, nudge inside
-  Object.values(deptBounds).forEach(b => {
-    if (Math.abs(adjY1 - b.top) < CPPAD)    adjY1 = b.top + CPPAD;
-    if (Math.abs(adjY1 - b.bottom) < CPPAD) adjY1 = b.bottom - CPPAD;
-    if (Math.abs(adjY2 - b.top) < CPPAD)    adjY2 = b.top + CPPAD;
-    if (Math.abs(adjY2 - b.bottom) < CPPAD) adjY2 = b.bottom - CPPAD;
-  });
-  const x1 = fn.x + fw, y1 = adjY1;
-  const x2 = tn.x,      y2 = adjY2;
+  const x1 = fn.x + fw;
+  const y1 = fn.y + Math.max(fh/2, TITLE_H + 10); // exit below title area
+  const x2 = tn.x;
+  const y2 = tn.y + Math.max(th/2, TITLE_H + 10); // entry below title area
 
   const isBack = x2 < x1 + GAP*2;
 
@@ -656,26 +645,24 @@ function getConnGeometry(conn) {
     const isWrapDown = fn.y < tn.y - 20;
 
     if (isWrapDown) {
+      // Row-wrap: bottom-centre exit → clear below all nodes → bottom-centre entry
       const ox1 = fn.x + fw/2, oy1 = fn.y + fh;    // bottom-centre source
-      const ox2 = tn.x + tw/2, oy2 = tn.y;          // top-centre target
-      // Route in the GAP between source bottom and target top — midpoint
-      // Also respect dept boundary clearance (LAYOUT.PAD from boundary edge)
-      let routeY = (oy1 + oy2) / 2; // midpoint of inter-row gap
-      // Ensure clearance from dept boundary bottom edges
-      const { PAD } = LAYOUT;
-      const deptBounds = computeDeptBounds();
-      Object.values(deptBounds).forEach(b => {
-        // If route passes through a dept boundary bottom, push below it
-        if (routeY > b.bottom - PAD && routeY < b.bottom + PAD) {
-          routeY = b.bottom + PAD;
+      const ox2 = tn.x + fw/2, oy2 = tn.y + th;    // bottom-centre target (not top)
+      let maxBottom = Math.max(oy1, oy2);
+      State.nodes.forEach(n => {
+        if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+          const el = document.getElementById(`node-${n.id}`);
+          const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+          maxBottom = Math.max(maxBottom, (n.y||0) + nh);
         }
       });
+      const clearY = maxBottom + 35;
       const segments = [
-        {x1:ox1, y1:oy1, x2:ox1, y2:routeY},
-        {x1:ox1, y1:routeY, x2:ox2, y2:routeY},
-        {x1:ox2, y1:routeY, x2:ox2, y2:oy2},
+        {x1:ox1, y1:oy1, x2:ox1, y2:clearY},
+        {x1:ox1, y1:clearY, x2:ox2, y2:clearY},
+        {x1:ox2, y1:clearY, x2:ox2, y2:oy2},
       ];
-      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, routeY, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
 
     } else {
       // Same-row back: right-centre exit → orthogonal arc above → top-centre entry
@@ -906,12 +893,21 @@ function drawConnection(conn, svg, geom, crossings) {
   if (isWrapDown) {
     const ox1 = fn.x + fw/2, oy1 = fn.y + fh;
     const ox2 = tn.x + tw/2, oy2 = tn.y;
-    const routeY = geom.routeY || (oy1 + oy2) / 2;
-    const R = 10;
+    let maxBottom = oy1;
+    State.nodes.forEach(n => {
+      if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+        const el = document.getElementById(`node-${n.id}`);
+        const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+        maxBottom = Math.max(maxBottom, (n.y||0) + nh);
+      }
+    });
+    const clearY = maxBottom + 35;
+    const R = 12; // corner radius
+    // Orthogonal path with rounded corners using quadratic bezier at each bend
     const d = `M${ox1} ${oy1}
-      L${ox1} ${routeY - R} Q${ox1} ${routeY} ${ox1 + R} ${routeY}
-      L${ox2 - R} ${routeY} Q${ox2} ${routeY} ${ox2} ${routeY - R}
-      L${ox2} ${oy2}`.replace(/\n\s+/g,' ');
+      L${ox1} ${clearY - R} Q${ox1} ${clearY} ${ox1 + R} ${clearY}
+      L${ox2 - R} ${clearY} Q${ox2} ${clearY} ${ox2} ${clearY - R}
+      L${ox2} ${oy2 + R} Q${ox2} ${oy2} ${ox2 + R} ${oy2}`.replace(/\n\s+/g,' ');
     drawPath(d);
     return;
   }
@@ -939,30 +935,6 @@ function drawConnection(conn, svg, geom, crossings) {
   const cx = dx > 80 ? dx*0.45 : 60;
   const dStr = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
   drawPath(dStr);
-
-  // Standard flowchart crossing — small hop arc (semicircle) where connectors cross
-  if (crossings && crossings.length) {
-    const HOP_R = 6;
-    crossings.forEach(pt => {
-      const ang = Math.atan2(y2 - y1, x2 - x1);
-      const bx1 = pt.x - Math.cos(ang)*HOP_R, by1 = pt.y - Math.sin(ang)*HOP_R;
-      const bx2 = pt.x + Math.cos(ang)*HOP_R, by2 = pt.y + Math.sin(ang)*HOP_R;
-      // Erase background under arc so it reads cleanly
-      const gap = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      gap.setAttribute('cx', pt.x); gap.setAttribute('cy', pt.y);
-      gap.setAttribute('r', HOP_R + 1);
-      gap.setAttribute('fill', 'var(--bg0, #07090c)');
-      svg.appendChild(gap);
-      // Hop arc
-      const arc = document.createElementNS('http://www.w3.org/2000/svg','path');
-      arc.setAttribute('d', `M${bx1} ${by1} A${HOP_R} ${HOP_R} 0 0 1 ${bx2} ${by2}`);
-      arc.setAttribute('stroke', strokeColor);
-      arc.setAttribute('stroke-width', strokeWidth);
-      arc.setAttribute('fill', 'none');
-      svg.appendChild(arc);
-    });
-  }
-
   const lbl = conn.label||cs.label;
   if (lbl) addSvgLabel(svg,(x1+x2)/2,(y1+y2)/2-8, lbl, cs.color);
 }
@@ -1008,8 +980,6 @@ function addNode(type, x, y) {
   bufferAudit('modified', `Step added: "${node.name}" [${type}]`, { field:'node', from:null, to:node.name });
   document.getElementById('empty-state').style.display = 'none';
   renderNode(node); renderConnections(); selectNode(node);
-  // LAY-10: recompute dept boundaries after every node add
-  enforceAllDeptGaps(); renderCanvas();
 }
 
 // ── NODE DRAG ─────────────────────────────────────
@@ -1138,9 +1108,7 @@ function addConnection(fromId, toId, type='sequence') {
   if (State.connections.find(c=>c.from===fromId&&c.to===toId&&c.type===type)) { notify('Connection already exists','error'); return; }
   pushUndo();
   State.connections.push({ id:'C-'+Date.now(), from:fromId, to:toId, type, label:'' });
-  State.dirty=true;
-  // LAY-10: recompute dept boundaries after connection add
-  enforceAllDeptGaps(); renderConnections();
+  State.dirty=true; renderConnections();
   notify(`${type} connection added`,'success');
 }
 
@@ -1539,17 +1507,13 @@ function executeDelete() {
     bufferAudit('deleted', `Step deleted: "${State.selectedNode.name}" [${State.selectedNode.type}]`, { field:'node', from:State.selectedNode.name, to:null });
     State.nodes=State.nodes.filter(n=>n.id!==id);
     State.connections=State.connections.filter(c=>c.from!==id&&c.to!==id);
-    State.dirty=true; clearSelection();
-    // LAY-10/11: recompute dept boundaries after delete (handles shrink too)
-    enforceAllDeptGaps(); renderCanvas();
+    State.dirty=true; clearSelection(); renderCanvas();
     if (!State.nodes.length) document.getElementById('empty-state').style.display='block';
     notify('Step deleted','info');
   } else if (State.selectedConn) {
     bufferAudit('modified', `Connector deleted: ${State.selectedConn.type}`, { field:'connection', from:State.selectedConn.id, to:null });
     State.connections=State.connections.filter(c=>c.id!==State.selectedConn.id);
-    State.dirty=true; clearSelection();
-    // LAY-10: recompute after connector delete
-    enforceAllDeptGaps(); renderConnections();
+    State.dirty=true; clearSelection(); renderConnections();
     notify('Connection deleted','info');
   }
 }
@@ -1671,9 +1635,10 @@ function autoLayout() {
   if (!State.nodes.length) return;
   pushUndo();
 
-  const { START_X, START_Y, PAD, HEADER_H, DEPT_GAP } = LAYOUT;
+  const { START_X, START_Y, NODE_W, NODE_H, PAD, HEADER_H, DEPT_GAP } = LAYOUT;
   const BAND_GAP = PAD * 2 + HEADER_H + DEPT_GAP;
 
+  // Group by department
   const deptGroups = {};
   const undeptNodes = [];
   State.nodes.forEach(n => {
@@ -1689,35 +1654,28 @@ function autoLayout() {
   const useHorizontal = deptKeys.length >= 2 && deptKeys.length <= 3 &&
     deptKeys.every(d => deptGroups[d].length <= 5);
 
-  function runLayout() {
-    if (deptKeys.length >= 2) {
-      if (useHorizontal) {
-        let x = START_X;
-        deptKeys.forEach(dept => {
-          const nodes = deptGroups[dept];
-          layoutGroup(nodes, x, START_Y);
-          const maxRight = Math.max(...nodes.map(n => (n.x||0) + nodeSize(n).w));
-          x = maxRight + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
-      } else {
-        let y = START_Y;
-        deptKeys.forEach(dept => {
-          y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
-      }
+  if (deptKeys.length >= 2) {
+    if (useHorizontal) {
+      let x = START_X;
+      deptKeys.forEach(dept => {
+        const nodes = deptGroups[dept];
+        layoutGroup(nodes, x, START_Y);
+        const maxRight = Math.max(...nodes.map(n => (n.x||0) + nodeSize(n).w));
+        x = maxRight + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
     } else {
-      layoutGroup(State.nodes, START_X, START_Y);
+      let y = START_Y;
+      deptKeys.forEach(dept => {
+        y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
     }
+  } else {
+    layoutGroup(State.nodes, START_X, START_Y);
   }
 
-  // Pass 1 — initial placement with estimated sizes
-  runLayout();
-  renderCanvas(); // render so DOM elements exist with real sizes
-
-  // Pass 2 — re-run collision with real DOM sizes now available
-  runLayout();
+  // Push overlapping dept boxes apart — then pull together if gap too large
   enforceAllDeptGaps();
 
   State.dirty = true;
@@ -1778,17 +1736,16 @@ function enforceAllDeptGaps() {
             b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
           }
           changed = true;
-        } else if (!overlapX && !overlapY) {
-          // LAY-11: both axes clear — pull if too far apart (bidirectional shrink)
-          if (gapY_ab > MAX_GAP && Math.abs(gapX_ab) < MAX_GAP * 3) {
-            const pull = gapY_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
-            changed = true;
-          } else if (gapX_ab > MAX_GAP && Math.abs(gapY_ab) < MAX_GAP * 3) {
-            const pull = gapX_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
-            changed = true;
-          }
+        } else if (gapY_ab > MAX_GAP && !overlapX) {
+          // Too far apart vertically — pull b up
+          const pull = gapY_ab - MIN_GAP;
+          b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
+          changed = true;
+        } else if (gapX_ab > MAX_GAP && !overlapY) {
+          // Too far apart horizontally — pull b left
+          const pull = gapX_ab - MIN_GAP;
+          b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
+          changed = true;
         }
       }
     }

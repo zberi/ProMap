@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — PROMAP Engine v1.6.13
-   v1.6.13: LAY-10 dept boundary recompute on add/delete/connect
-            LAY-11 bidirectional dept gap pull fixed
-            LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — PROMAP Engine v1.6.11
+   Fixes: N51 layer filter; N76 save guard; N78 pedigree guard; N79 verified
+   N39/N62: Audit trail — field-level change capture, viewer panel
    ═══════════════════════════════════════════════ */
 
 window.State = {
@@ -470,10 +469,10 @@ function updateHeader() {
     statusEl.textContent = (p.status||'DRAFT').toUpperCase();
     statusEl.className = 'status-badge '+(p.status==='published'?'status-published':'status-draft');
     statusEl.style.display = ''; versionEl.textContent = `v${p.version||1}`; versionEl.style.display = '';
-    ['btn-save','btn-publish','btn-export','btn-export-pdf','btn-audit'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display=''; });
+    ['btn-save','btn-publish','btn-export','btn-audit'].forEach(id => document.getElementById(id).style.display='');
   } else {
     statusEl.style.display='none'; versionEl.style.display='none';
-    ['btn-save','btn-publish','btn-export','btn-export-pdf','btn-audit'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+    ['btn-save','btn-publish','btn-export','btn-audit'].forEach(id => document.getElementById(id).style.display='none');
   }
 }
 
@@ -619,7 +618,6 @@ function getConnGeometry(conn) {
   const tw = (te && te.offsetWidth  > 0) ? te.offsetWidth  : (['start','end'].includes(tn.type) ? 120 : 172);
   const th = (te && te.offsetHeight > 0) ? te.offsetHeight : 80;
   const GAP = 20;
-  const TITLE_H = 24; // approximate node title/header height — connector clears this
 
   // ── LOOP: top-centre → soft bezier arc above → top-centre ──
   if (conn.type === 'loop') {
@@ -634,51 +632,38 @@ function getConnGeometry(conn) {
     return { x1:lx1, y1:ly1, x2:lx2, y2:ly2, segments, isBack:true, isLoop:true, fn,tn,fw,fh,tw,th,GAP };
   }
 
-  // Normal forward: right-centre (below title) → left-centre
-  // Clearance from dept boundary edges — shift exit/entry Y if too close to boundary
-  const { PAD: CPPAD } = LAYOUT;
-  const deptBounds = computeDeptBounds();
-  let adjY1 = fn.y + Math.max(fh/2, 24);
-  let adjY2 = tn.y + Math.max(th/2, 24);
-  // If exit point is within PAD of any dept boundary top or bottom, nudge inside
-  Object.values(deptBounds).forEach(b => {
-    if (Math.abs(adjY1 - b.top) < CPPAD)    adjY1 = b.top + CPPAD;
-    if (Math.abs(adjY1 - b.bottom) < CPPAD) adjY1 = b.bottom - CPPAD;
-    if (Math.abs(adjY2 - b.top) < CPPAD)    adjY2 = b.top + CPPAD;
-    if (Math.abs(adjY2 - b.bottom) < CPPAD) adjY2 = b.bottom - CPPAD;
-  });
-  const x1 = fn.x + fw, y1 = adjY1;
-  const x2 = tn.x,      y2 = adjY2;
+  // Normal forward: right-centre → left-centre
+  const x1 = fn.x + fw, y1 = fn.y + fh/2;
+  const x2 = tn.x,      y2 = tn.y + th/2;
 
   const isBack = x2 < x1 + GAP*2;
 
   if (isBack) {
-    const isWrapDown = fn.y < tn.y - 20;
+    const isWrapDown = fn.y < tn.y - 20; // target is meaningfully lower row
 
     if (isWrapDown) {
-      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;    // bottom-centre source
+      // Row-wrap: bottom-centre exit → clear below all nodes in path → top-centre entry
+      const ox1 = fn.x + fw/2, oy1 = fn.y + fh;   // bottom-centre source
       const ox2 = tn.x + tw/2, oy2 = tn.y;          // top-centre target
-      // Route in the GAP between source bottom and target top — midpoint
-      // Also respect dept boundary clearance (LAYOUT.PAD from boundary edge)
-      let routeY = (oy1 + oy2) / 2; // midpoint of inter-row gap
-      // Ensure clearance from dept boundary bottom edges
-      const { PAD } = LAYOUT;
-      const deptBounds = computeDeptBounds();
-      Object.values(deptBounds).forEach(b => {
-        // If route passes through a dept boundary bottom, push below it
-        if (routeY > b.bottom - PAD && routeY < b.bottom + PAD) {
-          routeY = b.bottom + PAD;
+      let maxBottom = Math.max(oy1, fn.y + fh);
+      State.nodes.forEach(n => {
+        if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+          const el = document.getElementById(`node-${n.id}`);
+          const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+          maxBottom = Math.max(maxBottom, (n.y||0) + nh);
         }
       });
+      const clearY = maxBottom + 35;
       const segments = [
-        {x1:ox1, y1:oy1, x2:ox1, y2:routeY},
-        {x1:ox1, y1:routeY, x2:ox2, y2:routeY},
-        {x1:ox2, y1:routeY, x2:ox2, y2:oy2},
+        {x1:ox1, y1:oy1, x2:ox1, y2:clearY},
+        {x1:ox1, y1:clearY, x2:ox2, y2:clearY},
+        {x1:ox2, y1:clearY, x2:ox2, y2:oy2},
       ];
-      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, routeY, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
+      return { x1:ox1, y1:oy1, x2:ox2, y2:oy2, segments, isBack:true, isWrapDown:true, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
 
     } else {
-      // Same-row back: right-centre exit → orthogonal arc above → top-centre entry
+      // Same-row back: right-centre exit → bezier arc above row → top-centre entry
+      // Use cubic bezier: exit right, curve up and left, enter top of target
       const segments = [{x1, y1, x2:tn.x+tw/2, y2:tn.y}];
       return { x1, y1, x2:tn.x+tw/2, y2:tn.y, segments, isBack:true, isSameRowBack:true, isWrapDown:false, isLoop:false, fn,tn,fw,fh,tw,th,GAP };
     }
@@ -724,7 +709,9 @@ function renderGroupContainers(svg) {
   // If multiple child-processes exist under same parent, each gets its own container.
   // Also: nodes with explicit groupId field still group (manual override).
 
-  const { PAD, HEADER_H, DEPT_GAP: MIN_DEPT_GAP } = LAYOUT;
+  const PAD = 36;       // minimum space between node edge and box wall on all sides
+  const HEADER_H = 36;  // header band — large enough title never overlaps first node
+  const MIN_DEPT_GAP = 20; // minimum gap between department boxes enforced here
 
   const groups = {}; // key → { label, nodes[] }
 
@@ -906,12 +893,21 @@ function drawConnection(conn, svg, geom, crossings) {
   if (isWrapDown) {
     const ox1 = fn.x + fw/2, oy1 = fn.y + fh;
     const ox2 = tn.x + tw/2, oy2 = tn.y;
-    const routeY = geom.routeY || (oy1 + oy2) / 2;
-    const R = 10;
+    let maxBottom = oy1;
+    State.nodes.forEach(n => {
+      if ((n.y||0) >= fn.y && (n.y||0) <= tn.y + th) {
+        const el = document.getElementById(`node-${n.id}`);
+        const nh = (el && el.offsetHeight) ? el.offsetHeight : 90;
+        maxBottom = Math.max(maxBottom, (n.y||0) + nh);
+      }
+    });
+    const clearY = maxBottom + 35;
+    const R = 12; // corner radius
+    // Orthogonal path with rounded corners using quadratic bezier at each bend
     const d = `M${ox1} ${oy1}
-      L${ox1} ${routeY - R} Q${ox1} ${routeY} ${ox1 + R} ${routeY}
-      L${ox2 - R} ${routeY} Q${ox2} ${routeY} ${ox2} ${routeY - R}
-      L${ox2} ${oy2}`.replace(/\n\s+/g,' ');
+      L${ox1} ${clearY - R} Q${ox1} ${clearY} ${ox1 + R} ${clearY}
+      L${ox2 - R} ${clearY} Q${ox2} ${clearY} ${ox2} ${clearY - R}
+      L${ox2} ${oy2 + R} Q${ox2} ${oy2} ${ox2 + R} ${oy2}`.replace(/\n\s+/g,' ');
     drawPath(d);
     return;
   }
@@ -939,30 +935,6 @@ function drawConnection(conn, svg, geom, crossings) {
   const cx = dx > 80 ? dx*0.45 : 60;
   const dStr = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
   drawPath(dStr);
-
-  // Standard flowchart crossing — small hop arc (semicircle) where connectors cross
-  if (crossings && crossings.length) {
-    const HOP_R = 6;
-    crossings.forEach(pt => {
-      const ang = Math.atan2(y2 - y1, x2 - x1);
-      const bx1 = pt.x - Math.cos(ang)*HOP_R, by1 = pt.y - Math.sin(ang)*HOP_R;
-      const bx2 = pt.x + Math.cos(ang)*HOP_R, by2 = pt.y + Math.sin(ang)*HOP_R;
-      // Erase background under arc so it reads cleanly
-      const gap = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      gap.setAttribute('cx', pt.x); gap.setAttribute('cy', pt.y);
-      gap.setAttribute('r', HOP_R + 1);
-      gap.setAttribute('fill', 'var(--bg0, #07090c)');
-      svg.appendChild(gap);
-      // Hop arc
-      const arc = document.createElementNS('http://www.w3.org/2000/svg','path');
-      arc.setAttribute('d', `M${bx1} ${by1} A${HOP_R} ${HOP_R} 0 0 1 ${bx2} ${by2}`);
-      arc.setAttribute('stroke', strokeColor);
-      arc.setAttribute('stroke-width', strokeWidth);
-      arc.setAttribute('fill', 'none');
-      svg.appendChild(arc);
-    });
-  }
-
   const lbl = conn.label||cs.label;
   if (lbl) addSvgLabel(svg,(x1+x2)/2,(y1+y2)/2-8, lbl, cs.color);
 }
@@ -1008,8 +980,6 @@ function addNode(type, x, y) {
   bufferAudit('modified', `Step added: "${node.name}" [${type}]`, { field:'node', from:null, to:node.name });
   document.getElementById('empty-state').style.display = 'none';
   renderNode(node); renderConnections(); selectNode(node);
-  // LAY-10: recompute dept boundaries after every node add
-  enforceAllDeptGaps(); renderCanvas();
 }
 
 // ── NODE DRAG ─────────────────────────────────────
@@ -1068,8 +1038,9 @@ function reflowDepartmentBands() {
     deptGroups[n.department].push(n);
   });
 
-  const { PAD, HEADER_H, DEPT_GAP: VISUAL_GAP } = LAYOUT;
-  const NODE_H = LAYOUT.NODE_H, NODE_W = LAYOUT.NODE_W;
+  const NODE_H = 100, NODE_W = 200;
+  const PAD = 36, HEADER_H = 36;  // matches renderGroupContainers
+  const VISUAL_GAP = 24;           // minimum gap between dept box edges
 
   const bands = Object.entries(deptGroups).map(([dept, nodes]) => {
     const xs = nodes.map(n => n.x || 0);
@@ -1138,9 +1109,7 @@ function addConnection(fromId, toId, type='sequence') {
   if (State.connections.find(c=>c.from===fromId&&c.to===toId&&c.type===type)) { notify('Connection already exists','error'); return; }
   pushUndo();
   State.connections.push({ id:'C-'+Date.now(), from:fromId, to:toId, type, label:'' });
-  State.dirty=true;
-  // LAY-10: recompute dept boundaries after connection add
-  enforceAllDeptGaps(); renderConnections();
+  State.dirty=true; renderConnections();
   notify(`${type} connection added`,'success');
 }
 
@@ -1539,17 +1508,13 @@ function executeDelete() {
     bufferAudit('deleted', `Step deleted: "${State.selectedNode.name}" [${State.selectedNode.type}]`, { field:'node', from:State.selectedNode.name, to:null });
     State.nodes=State.nodes.filter(n=>n.id!==id);
     State.connections=State.connections.filter(c=>c.from!==id&&c.to!==id);
-    State.dirty=true; clearSelection();
-    // LAY-10/11: recompute dept boundaries after delete (handles shrink too)
-    enforceAllDeptGaps(); renderCanvas();
+    State.dirty=true; clearSelection(); renderCanvas();
     if (!State.nodes.length) document.getElementById('empty-state').style.display='block';
     notify('Step deleted','info');
   } else if (State.selectedConn) {
     bufferAudit('modified', `Connector deleted: ${State.selectedConn.type}`, { field:'connection', from:State.selectedConn.id, to:null });
     State.connections=State.connections.filter(c=>c.id!==State.selectedConn.id);
-    State.dirty=true; clearSelection();
-    // LAY-10: recompute after connector delete
-    enforceAllDeptGaps(); renderConnections();
+    State.dirty=true; clearSelection(); renderConnections();
     notify('Connection deleted','info');
   }
 }
@@ -1573,109 +1538,92 @@ function fitView() {
   State.offset.x=-Math.min(...xs)*State.scale+80; State.offset.y=-Math.min(...ys)*State.scale+80;
   applyTransform();
 }
-// ── LAYOUT CONSTANTS (single source of truth) ────
-const LAYOUT = {
-  GAP_X:    260,   // horizontal gap between nodes
-  GAP_Y:    160,   // vertical gap between rows
-  START_X:  80,
-  START_Y:  80,
-  NODE_W:   200,   // default node width estimate
-  NODE_H:   100,   // default node height estimate
-  MARGIN:   24,    // minimum gap between nodes
-  PAD:      36,    // dept box padding around nodes
-  HEADER_H: 36,    // dept box header band height
-  DEPT_GAP: 30,    // minimum gap between dept boxes
-};
-
-// Get real node dimensions from DOM, fallback to estimates
-function nodeSize(n) {
-  const el = document.getElementById(`node-${n.id}`);
-  return {
-    w: (el && el.offsetWidth  > 0) ? el.offsetWidth  : LAYOUT.NODE_W,
-    h: (el && el.offsetHeight > 0) ? el.offsetHeight : LAYOUT.NODE_H,
-  };
-}
-
-// Layout a group of nodes sequentially following connection order.
-// New rows continue from the X position of the last node in the previous row
-// (not reset to START_X) — keeps flow readable.
-function layoutGroup(nodes, originX, originY) {
-  if (!nodes.length) return originY;
-  const { GAP_X, GAP_Y, MARGIN, HEADER_H } = LAYOUT;
-  const effectiveY = originY + HEADER_H; // reserve header space above first node
-
-  // BFS order if connections exist, else original order
-  const ids = new Set(nodes.map(n => n.id));
-  const hasConns = State.connections.some(c => ids.has(c.from) && ids.has(c.to));
-  let ordered;
-  if (hasConns) {
-    const visited = new Set();
-    const roots = nodes.filter(n => !State.connections.some(c => c.to === n.id && ids.has(c.from)));
-    const queue = (roots.length ? roots : [nodes[0]]).map(n => n.id);
-    ordered = [];
-    while (queue.length) {
-      const id = queue.shift();
-      if (visited.has(id)) continue;
-      visited.add(id);
-      const node = nodes.find(n => n.id === id);
-      if (node) ordered.push(node);
-      State.connections.filter(c => c.from === id && ids.has(c.to)).forEach(c => queue.push(c.to));
-    }
-    nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
-  } else {
-    ordered = [...nodes];
-  }
-
-  // Place nodes — new row continues from rightmost position of previous row
-  let curX = originX, curY = effectiveY, rowMaxH = 0, colCount = 0;
-  const MAX_COLS = 4;
-  ordered.forEach((n, i) => {
-    const sz = nodeSize(n);
-    if (colCount > 0 && colCount % MAX_COLS === 0) {
-      // New row — start from current X (rightmost of last row), not origin
-      curX = originX; // reset to origin X for new row
-      curY += rowMaxH + LAYOUT.GAP_Y;
-      rowMaxH = 0;
-      colCount = 0;
-    }
-    n.x = curX;
-    n.y = curY;
-    curX += sz.w + GAP_X;
-    rowMaxH = Math.max(rowMaxH, sz.h);
-    colCount++;
-  });
-
-  // Collision pass — real sizes, push down only (maintain left-to-right order)
-  let changed = true, passes = 0;
-  while (changed && passes++ < 30) {
-    changed = false;
-    for (let i = 0; i < ordered.length; i++) {
-      for (let j = i + 1; j < ordered.length; j++) {
-        const a = ordered[i], b = ordered[j];
-        const szA = nodeSize(a), szB = nodeSize(b);
-        const overlapX = a.x < b.x + szB.w + MARGIN && a.x + szA.w + MARGIN > b.x;
-        const overlapY = a.y < b.y + szB.h + MARGIN && a.y + szA.h + MARGIN > b.y;
-        if (overlapX && overlapY) {
-          b.y = a.y + szA.h + MARGIN;
-          changed = true;
-        }
-      }
-    }
-  }
-
-  // Return actual bottom edge
-  return Math.max(...ordered.map(n => (n.y||0) + nodeSize(n).h));
-}
-
 function autoLayout() {
   if (!State.nodes.length) return;
   pushUndo();
 
-  const { START_X, START_Y, PAD, HEADER_H, DEPT_GAP } = LAYOUT;
-  const BAND_GAP = PAD * 2 + HEADER_H + DEPT_GAP;
+  const GAP_X    = 260;
+  const GAP_Y    = 160;
+  const START_X  = 80;
+  const START_Y  = 80;
+  const MAX_COLS = 4;
+  const NODE_W   = 200;
+  const NODE_H   = 100;
+  const CONTAINER_PAD = 40 + 28;
+  const VISUAL_GAP    = 30;
+  const BAND_GAP      = (CONTAINER_PAD * 2) + VISUAL_GAP;
 
+  // Sequential layout within a group — step order primary, BFS depth secondary
+  // Nodes laid left-to-right in sequence, wrap after MAX_COLS
+  function layoutGroup(nodes, originX, originY) {
+    if (!nodes.length) return originY;
+    const HEADER_H = 36; // reserve space for dept label above first node — matches renderGroupContainers
+    const effectiveOriginY = originY + HEADER_H; // first node starts below header
+
+    const ids = new Set(nodes.map(n => n.id));
+    const hasConns = State.connections.some(c => ids.has(c.from) && ids.has(c.to));
+    let ordered;
+
+    if (hasConns) {
+      const visited = new Set();
+      const roots = nodes.filter(n => !State.connections.some(c => c.to === n.id && ids.has(c.from)));
+      const queue = (roots.length ? roots : [nodes[0]]).map(n => n.id);
+      ordered = [];
+      while (queue.length) {
+        const id = queue.shift();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const node = nodes.find(n => n.id === id);
+        if (node) ordered.push(node);
+        State.connections.filter(c => c.from === id && ids.has(c.to)).forEach(c => queue.push(c.to));
+      }
+      nodes.forEach(n => { if (!visited.has(n.id)) ordered.push(n); });
+    } else {
+      ordered = [...nodes];
+    }
+
+    // Place sequentially
+    ordered.forEach((n, i) => {
+      const col = i % MAX_COLS;
+      const row = Math.floor(i / MAX_COLS);
+      n.x = originX + col * GAP_X;
+      n.y = effectiveOriginY + row * GAP_Y;
+    });
+
+    // Collision pass — use real DOM heights where available
+    let changed = true, passes = 0;
+    while (changed && passes++ < 30) {
+      changed = false;
+      for (let i = 0; i < ordered.length; i++) {
+        for (let j = i + 1; j < ordered.length; j++) {
+          const a = ordered[i], b = ordered[j];
+          const elA = document.getElementById(`node-${a.id}`);
+          const elB = document.getElementById(`node-${b.id}`);
+          const aW = (elA && elA.offsetWidth)  ? elA.offsetWidth  : NODE_W;
+          const aH = (elA && elA.offsetHeight) ? elA.offsetHeight : NODE_H;
+          const bW = (elB && elB.offsetWidth)  ? elB.offsetWidth  : NODE_W;
+          const bH = (elB && elB.offsetHeight) ? elB.offsetHeight : NODE_H;
+          const MARGIN = 24;
+          const overlapX = a.x < b.x + bW + MARGIN && a.x + aW + MARGIN > b.x;
+          const overlapY = a.y < b.y + bH + MARGIN && a.y + aH + MARGIN > b.y;
+          if (overlapX && overlapY) {
+            b.y = a.y + aH + MARGIN;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    const maxBottom = Math.max(...ordered.map(n => {
+      const el = document.getElementById(`node-${n.id}`);
+      return (n.y||0) + ((el && el.offsetHeight) ? el.offsetHeight : NODE_H);
+    }));
+    return maxBottom;
+  }
+
+  // Group by department
   const deptGroups = {};
-  const undeptNodes = [];
+  let undeptNodes = [];
   State.nodes.forEach(n => {
     if (n.department && n.department.trim()) {
       if (!deptGroups[n.department]) deptGroups[n.department] = [];
@@ -1686,209 +1634,61 @@ function autoLayout() {
   });
 
   const deptKeys = Object.keys(deptGroups);
-  const useHorizontal = deptKeys.length >= 2 && deptKeys.length <= 3 &&
-    deptKeys.every(d => deptGroups[d].length <= 5);
+  const HORIZ_THRESHOLD = 3;
+  const STEP_THRESHOLD  = 5;
+  const useHorizontal = deptKeys.length >= 2 && deptKeys.length <= HORIZ_THRESHOLD &&
+    deptKeys.every(d => deptGroups[d].length <= STEP_THRESHOLD);
 
-  function runLayout() {
-    if (deptKeys.length >= 2) {
-      if (useHorizontal) {
-        let x = START_X;
-        deptKeys.forEach(dept => {
-          const nodes = deptGroups[dept];
-          layoutGroup(nodes, x, START_Y);
-          const maxRight = Math.max(...nodes.map(n => (n.x||0) + nodeSize(n).w));
-          x = maxRight + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
-      } else {
-        let y = START_Y;
-        deptKeys.forEach(dept => {
-          y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
-        });
-        if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
-      }
+  if (deptKeys.length >= 2) {
+    if (useHorizontal) {
+      // Horizontal bands — departments side by side
+      let x = START_X;
+      deptKeys.forEach(dept => {
+        const nodes = deptGroups[dept];
+        const bottom = layoutGroup(nodes, x, START_Y);
+        const maxRight = Math.max(...nodes.map(n => n.x)) + NODE_W;
+        x = maxRight + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, x, START_Y);
     } else {
-      layoutGroup(State.nodes, START_X, START_Y);
+      // Vertical bands — departments stacked
+      let y = START_Y;
+      deptKeys.forEach(dept => {
+        y = layoutGroup(deptGroups[dept], START_X, y) + BAND_GAP;
+      });
+      if (undeptNodes.length) layoutGroup(undeptNodes, START_X, y);
     }
+  } else {
+    // Single group or no departments — sequential left-to-right
+    layoutGroup(State.nodes, START_X, START_Y);
   }
 
-  // Pass 1 — initial placement with estimated sizes
-  runLayout();
-  renderCanvas(); // render so DOM elements exist with real sizes
-
-  // Pass 2 — re-run collision with real DOM sizes now available
-  runLayout();
-  enforceAllDeptGaps();
+  // Store persistent dept bounds in State — prevents retraction bug
+  State.deptBounds = computeDeptBounds();
 
   State.dirty = true;
   renderCanvas();
   notify('Layout applied', 'success');
 }
 
-// Unified dept gap enforcement — push AND pull, all 4 sides
-// Used by both autoLayout and post-drag reflow
-function enforceAllDeptGaps() {
-  const { PAD, HEADER_H, DEPT_GAP } = LAYOUT;
-  const MIN_GAP = DEPT_GAP;
-  const MAX_GAP = DEPT_GAP + 20; // tolerated maximum before pulling together
-
-  const deptGroups = {};
-  State.nodes.forEach(n => {
-    if (!n.department || !n.department.trim()) return;
-    if (!deptGroups[n.department]) deptGroups[n.department] = [];
-    deptGroups[n.department].push(n);
-  });
-
-  function getBBox(nodes) {
-    let minX = Infinity, minY = Infinity, maxR = -Infinity, maxB = -Infinity;
-    nodes.forEach(n => {
-      const sz = nodeSize(n);
-      minX = Math.min(minX, n.x||0);
-      minY = Math.min(minY, n.y||0);
-      maxR = Math.max(maxR, (n.x||0) + sz.w);
-      maxB = Math.max(maxB, (n.y||0) + sz.h);
-    });
-    return { left: minX - PAD, top: minY - PAD - HEADER_H, right: maxR + PAD, bottom: maxB + PAD };
-  }
-
-  const depts = Object.entries(deptGroups).map(([dept, nodes]) => ({ dept, nodes, ...getBBox(nodes) }));
-
-  let changed = true, passes = 0;
-  while (changed && passes++ < 25) {
-    changed = false;
-    for (let i = 0; i < depts.length; i++) {
-      for (let j = i + 1; j < depts.length; j++) {
-        const a = depts[i], b = depts[j];
-        // Recompute each iteration since nodes moved
-        Object.assign(a, getBBox(a.nodes));
-        Object.assign(b, getBBox(b.nodes));
-
-        const gapX_ab = b.left - a.right;   // gap between a's right and b's left
-        const gapY_ab = b.top  - a.bottom;  // gap between a's bottom and b's top
-        const overlapX = a.left < b.right && a.right > b.left;
-        const overlapY = a.top  < b.bottom && a.bottom > b.top;
-
-        if (overlapX && overlapY) {
-          // Overlapping — push apart
-          const pushDown  = a.bottom + MIN_GAP - b.top;
-          const pushRight = a.right  + MIN_GAP - b.left;
-          if (pushDown <= pushRight) {
-            b.nodes.forEach(n => { n.y = (n.y||0) + pushDown; });
-          } else {
-            b.nodes.forEach(n => { n.x = (n.x||0) + pushRight; });
-          }
-          changed = true;
-        } else if (!overlapX && !overlapY) {
-          // LAY-11: both axes clear — pull if too far apart (bidirectional shrink)
-          if (gapY_ab > MAX_GAP && Math.abs(gapX_ab) < MAX_GAP * 3) {
-            const pull = gapY_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.y = (n.y||0) - pull; });
-            changed = true;
-          } else if (gapX_ab > MAX_GAP && Math.abs(gapY_ab) < MAX_GAP * 3) {
-            const pull = gapX_ab - MIN_GAP;
-            b.nodes.forEach(n => { n.x = (n.x||0) - pull; });
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-}
-
-function reflowDepartmentBands() {
-  enforceAllDeptGaps();
-}
-
-// computeDeptBounds kept for compatibility
+// Compute and store department bounding boxes — persistent, not recomputed from scratch each render
 function computeDeptBounds() {
-  const { PAD, HEADER_H } = LAYOUT;
+  const PAD = 40, HEADER_H = 28, NODE_W = 200, NODE_H = 100;
   const bounds = {};
   State.nodes.forEach(n => {
     if (!n.department || !n.department.trim()) return;
     if (!bounds[n.department]) bounds[n.department] = { left:Infinity, top:Infinity, right:-Infinity, bottom:-Infinity, nodes:[] };
     const b = bounds[n.department];
-    const sz = nodeSize(n);
     b.nodes.push(n);
     b.left   = Math.min(b.left,   (n.x||0) - PAD);
     b.top    = Math.min(b.top,    (n.y||0) - PAD - HEADER_H);
-    b.right  = Math.max(b.right,  (n.x||0) + sz.w + PAD);
-    b.bottom = Math.max(b.bottom, (n.y||0) + sz.h + PAD);
+    b.right  = Math.max(b.right,  (n.x||0) + NODE_W + PAD);
+    b.bottom = Math.max(b.bottom, (n.y||0) + NODE_H + PAD);
   });
   return bounds;
 }
 
-function exportCanvasPDF() {
-  if (!State.currentProcess) return;
-  const p = State.currentProcess;
-
-  // Get canvas bounds
-  const allX = State.nodes.map(n => n.x||0);
-  const allY = State.nodes.map(n => n.y||0);
-  if (!allX.length) { notify('No steps on canvas to export','error'); return; }
-  const minX = Math.min(...allX) - 60;
-  const minY = Math.min(...allY) - 60;
-  const maxX = Math.max(...allX) + 300;
-  const maxY = Math.max(...allY) + 200;
-  const W = maxX - minX;
-  const H = maxY - minY;
-
-  // Clone SVG (connectors + group containers)
-  const svgEl = document.getElementById('canvas-svg');
-  const svgClone = svgEl ? svgEl.cloneNode(true) : document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svgClone.setAttribute('viewBox', `${minX} ${minY} ${W} ${H}`);
-  svgClone.setAttribute('width', W);
-  svgClone.setAttribute('height', H);
-
-  // Clone node HTML elements as foreign objects won't work in print — snapshot as SVG text labels
-  const nodesSVG = State.nodes.map(n => {
-    const el = document.getElementById(`node-${n.id}`);
-    const w = el ? el.offsetWidth : 172;
-    const h = el ? el.offsetHeight : 80;
-    const col = NODE_COLORS[n.type]||NODE_COLORS.process;
-    return `
-      <rect x="${n.x}" y="${n.y}" width="${w}" height="${h}" rx="5"
-        fill="#131824" stroke="${col.border||col.text||'#0db89e'}" stroke-width="1.5"/>
-      <text x="${n.x+10}" y="${n.y+18}" font-size="9" fill="${col.text||'#0db89e'}"
-        font-family="IBM Plex Mono,monospace" font-weight="600">${n.stepId||n.id}</text>
-      <text x="${n.x+10}" y="${n.y+33}" font-size="11" fill="#f0f3f8"
-        font-family="IBM Plex Mono,monospace" font-weight="500"
-        textLength="${w-20}" lengthAdjust="spacingAndGlyphs">${(n.name||'').slice(0,28)}</text>
-      <text x="${n.x+10}" y="${n.y+47}" font-size="9" fill="#9aaac8"
-        font-family="IBM Plex Mono,monospace">${n.type.toUpperCase()} · ${n.responsible||'—'}</text>`;
-  }).join('');
-
-  const fullSVG = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${W} ${H}" width="${W}" height="${H}">
-  <rect x="${minX}" y="${minY}" width="${W}" height="${H}" fill="#07090c"/>
-  ${svgClone.innerHTML}
-  ${nodesSVG}
-</svg>`;
-
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html><head>
-    <title>${p.name} — MERIDIAN Process Blueprint</title>
-    <style>
-      body { margin:0; background:#07090c; }
-      .header { font-family:monospace; color:#9aaac8; padding:16px 24px; border-bottom:1px solid #2e3c58; display:flex; justify-content:space-between; }
-      .header h1 { color:#f0f3f8; font-size:16px; margin:0 0 4px; }
-      .header p { margin:0; font-size:11px; }
-      svg { display:block; max-width:100%; }
-      @media print {
-        .no-print { display:none; }
-        body { background:white; }
-        svg { filter:invert(1) hue-rotate(180deg); }
-      }
-    </style>
-  </head><body>
-    <div class="header">
-      <div><h1>${p.name}</h1><p>${p.processId||'—'} · ${p.function||'—'} · v${p.version||1} · ${new Date().toLocaleDateString('en-GB')}</p></div>
-      <button class="no-print" onclick="window.print()" style="background:#f0a500;border:none;border-radius:5px;color:#07090c;font-weight:700;padding:8px 18px;cursor:pointer;font-size:13px;">PRINT / SAVE PDF</button>
-    </div>
-    ${fullSVG}
-  </body></html>`);
-  win.document.close();
-  notify('PDF preview opened — use Print to save as PDF','success');
-}
+// ── EXPORT SOP ────────────────────────────────────
 function exportSOP() {
   if (!State.currentProcess) return;
   const p=State.currentProcess;
@@ -2050,21 +1850,12 @@ const LAYER_FILTERS = {
   'monitoring-view':{ nodeTypes: null, monitoringFilter: true },
 };
 let activeLayerFilter = 'all';
-let activeLevelFilter = 'all';
 
 function setLayerFilter(key) {
   activeLayerFilter = key;
-  document.querySelectorAll('#layer-filter .lf-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.filter === key);
-  });
-  applyLayerFilter();
-}
-
-// Item 5 — Level layer filter
-function setLevelFilter(key) {
-  activeLevelFilter = key;
-  document.querySelectorAll('#level-filter .lf-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.level === key);
+  document.querySelectorAll('.lf-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.dataset.filter === key) b.classList.add('active');
   });
   applyLayerFilter();
 }
@@ -2076,45 +1867,11 @@ function applyLayerFilter() {
     const el = document.getElementById(`node-${n.id}`);
     if (!el) return;
     let show = true;
-    // Classification/type filter
     if (f.nodeTypes && !f.nodeTypes.includes(n.type)) show = false;
     if (f.inputTypeFilter && n.inputType !== f.inputTypeFilter) show = false;
     if (f.monitoringFilter && !n.monitoring) show = false;
-    // Level filter
-    if (activeLevelFilter !== 'all') {
-      if (activeLevelFilter === 'L5') {
-        // L5+ means L5, L6, L7, L8
-        const lvl = parseInt((n.level||'L4').slice(1));
-        if (lvl < 5) show = false;
-      } else {
-        if (n.level !== activeLevelFilter) show = false;
-      }
-    }
-    el.style.opacity = show ? '1' : '0.12';
+    el.style.opacity = show ? '1' : '0.15';
     el.style.pointerEvents = show ? '' : 'none';
-  });
-}
-
-// Item 3 — Adjacent node highlight: selected + immediate next + immediate prior
-function highlightAdjacentNodes(nodeId) {
-  const nextIds  = new Set(State.connections.filter(c => c.from === nodeId).map(c => c.to));
-  const priorIds = new Set(State.connections.filter(c => c.to   === nodeId).map(c => c.from));
-  State.nodes.forEach(n => {
-    const el = document.getElementById(`node-${n.id}`);
-    if (!el) return;
-    if (n.id === nodeId) {
-      el.style.boxShadow = '0 0 0 2.5px var(--amber)';
-      el.style.opacity = '1';
-    } else if (nextIds.has(n.id)) {
-      el.style.boxShadow = '0 0 0 2px #4d79ff';
-      el.style.opacity = '1';
-    } else if (priorIds.has(n.id)) {
-      el.style.boxShadow = '0 0 0 2px #ff4d4d';
-      el.style.opacity = '1';
-    } else {
-      el.style.boxShadow = '';
-      el.style.opacity = '0.25';
-    }
   });
 }
 
@@ -2276,7 +2033,6 @@ const _origSelectNode = selectNode;
 window.selectNode = function(node) {
   _origSelectNode(node);
   highlightPath(node.id);
-  highlightAdjacentNodes(node.id); // Item 3 — adjacent nodes highlighted
   if (typeof MeridianBus !== 'undefined') MeridianBus.emit('promap:node-selected', { node, nodes: window.State.nodes, connections: window.State.connections });
 };
 

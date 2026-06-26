@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MERIDIAN — Design Studio v1.6.13</title>
+<title>MERIDIAN — Design Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/css/meridian.css"/>
@@ -23,11 +23,13 @@
     <span id="hdr-version" class="hdr-label" style="margin-left:9px;display:none;"></span>
   </div>
   <div class="hdr-r">
-    <button class="hdr-btn" onclick="showAuditTrail()" id="btn-audit" title="Audit Trail" style="display:none;">AUDIT</button>
+    <button class="hdr-btn" id="btn-audit" onclick="showAuditTrail()" style="display:none;">AUDIT TRAIL</button>
     <button class="hdr-btn" onclick="undoAction()" id="btn-undo" title="Undo (Ctrl+Z)" style="display:none;">↩ UNDO</button>
+    <button class="hdr-btn" onclick="newProcess()">+ NEW PROCESS</button>
     <button class="hdr-btn primary" id="btn-save" onclick="saveProcess()" style="display:none;">SAVE</button>
     <button class="hdr-btn success" id="btn-publish" onclick="publishProcess()" style="display:none;">PUBLISH</button>
     <button class="hdr-btn" id="btn-export" onclick="exportSOP()" style="display:none;">EXPORT SOP</button>
+    <button class="hdr-btn" id="btn-export-pdf" onclick="exportCanvasPDF()" style="display:none;">EXPORT PDF</button>
   </div>
 </div>
 
@@ -44,7 +46,7 @@
 <!-- BODY -->
 <div id="body">
 
-  <!-- SIDEBAR -->
+  <!-- SIDEBAR (shared) -->
   <div id="sidebar">
     <div class="sb-section">Processes</div>
     <div id="process-list"><div style="padding:10px 14px;font-size:13px;color:var(--text2);">No processes yet.</div></div>
@@ -90,7 +92,7 @@
       <button class="arco-sug-btn" style="margin:2px 8px;width:calc(100% - 16px);" onclick="arcoPrompt('Describe a sales order to dispatch process')">Sales Order</button>
       <div class="sb-hr"></div>
       <div class="sb-section">Mode</div>
-      <div style="padding:8px 14px;font-size:12px;color:var(--text2);" id="arco-mode-label">Checking...</div>
+      <div style="padding:8px 14px;font-size:12px;color:var(--text2);" id="arco-mode-label">Mock mode — API key not set</div>
     </div>
   </div>
 
@@ -114,18 +116,28 @@
       <!-- Layer filter bar -->
       <div id="layer-filter">
         <span style="font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.08em;padding:4px 8px 4px 4px;border-right:1px solid var(--border);margin-right:2px;text-transform:uppercase;white-space:nowrap;">Layers</span>
-        <button class="lf-btn active" data-filter="all"             onclick="setLayerFilter('all')">All</button>
-        <button class="lf-btn"        data-filter="controls-only"   onclick="setLayerFilter('controls-only')">Controls</button>
-        <button class="lf-btn"        data-filter="critical-only"   onclick="setLayerFilter('critical-only')">Critical</button>
-        <button class="lf-btn"        data-filter="manual-controls" onclick="setLayerFilter('manual-controls')">Manual</button>
-        <button class="lf-btn"        data-filter="compliance-view" onclick="setLayerFilter('compliance-view')">Compliance</button>
-        <button class="lf-btn"        data-filter="process-only"    onclick="setLayerFilter('process-only')">Process</button>
-        <button class="lf-btn"        data-filter="monitoring-view" onclick="setLayerFilter('monitoring-view')">Monitored</button>
+        <button class="lf-btn active" data-filter="all" onclick="setLayerFilter('all')">All</button>
+        <button class="lf-btn" data-filter="controls-only" onclick="setLayerFilter('controls-only')">Controls</button>
+        <button class="lf-btn" data-filter="critical-only" onclick="setLayerFilter('critical-only')">Critical</button>
+        <button class="lf-btn" data-filter="manual-controls" onclick="setLayerFilter('manual-controls')">Manual</button>
+        <button class="lf-btn" data-filter="compliance-view" onclick="setLayerFilter('compliance-view')">Compliance</button>
+        <button class="lf-btn" data-filter="process-only" onclick="setLayerFilter('process-only')">Process</button>
+        <button class="lf-btn" data-filter="monitoring-view" onclick="setLayerFilter('monitoring-view')">Monitored</button>
+      </div>
+      <!-- Level filter bar -->
+      <div id="level-filter">
+        <span style="font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.08em;padding:4px 8px 4px 4px;border-right:1px solid var(--border);margin-right:2px;text-transform:uppercase;white-space:nowrap;">Level</span>
+        <button class="lf-btn active" data-level="all" onclick="setLevelFilter('all')">All</button>
+        <button class="lf-btn" data-level="L1" onclick="setLevelFilter('L1')">L1</button>
+        <button class="lf-btn" data-level="L2" onclick="setLevelFilter('L2')">L2</button>
+        <button class="lf-btn" data-level="L3" onclick="setLevelFilter('L3')">L3</button>
+        <button class="lf-btn" data-level="L4" onclick="setLevelFilter('L4')">L4</button>
+        <button class="lf-btn" data-level="L5" onclick="setLevelFilter('L5')">L5+</button>
       </div>
 
       <!-- Float triggers -->
       <div id="float-triggers">
-        <button class="float-trigger" id="ft-arco"   onclick="toggleFloatPanel('arco')">ARCŌ</button>
+        <button class="float-trigger" id="ft-arco" onclick="toggleFloatPanel('arco')">ARCŌ</button>
         <button class="float-trigger" id="ft-cortex" onclick="toggleFloatPanel('cortex')">CORTEX</button>
       </div>
 
@@ -162,11 +174,10 @@
             <button class="float-ctrl-btn" onclick="toggleFloatPanel('cortex')">×</button>
           </div>
         </div>
-        <div style="padding:12px;max-height:460px;overflow-y:auto;font-size:12px;color:var(--text2);" id="float-cortex-body">
+        <div style="padding:12px;max-height:460px;overflow-y:auto;font-size:12px;color:var(--text2);">
           Run evaluation to see results here.
         </div>
       </div>
-
       <div id="toolbar">
         <button class="tb-btn active" id="tb-select"  onclick="setTool('select')">SELECT</button>
         <button class="tb-btn"        id="tb-connect" onclick="setTool('connect')">CONNECT</button>
@@ -197,18 +208,18 @@
 
   <!-- ARCŌ VIEW -->
   <div id="arco-view" style="display:none;flex:1;min-height:0;">
-    <!-- ARCŌ identity header -->
-    <div style="background:var(--bg1);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
-      <span style="font-size:11px;font-weight:700;color:var(--amber);letter-spacing:.12em;background:var(--amber-lo);border:1px solid var(--amber);border-radius:3px;padding:3px 8px;">ARCŌ</span>
-      <span style="font-size:12px;color:var(--text2);">Process Intake Assistant · MERIDIAN Design Studio v1.6.13</span>
-    </div>
     <div id="arco-chat">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        <div style="background:var(--amber-lo);border:1px solid var(--amber);border-radius:4px;padding:4px 9px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--amber);font-family:var(--font-mono);">ARCŌ</div>
+        <div style="font-size:12px;color:var(--text1);">Process Intake — <span style="color:var(--text2);">Describe, extract, refine, send to PROMAP</span></div>
+        <div style="margin-left:auto;font-size:11px;color:var(--text2);" id="arco-mode-badge"></div>
+      </div>
       <div id="arco-feed"></div>
       <div id="arco-input-bar">
         <textarea id="arco-input" placeholder="Describe your process in plain language... (Enter to send, Shift+Enter for new line)"
           onkeydown="arcoKeydown(event)" oninput="autoResizeTextarea(this)" rows="1"></textarea>
         <button class="arco-send-btn" onclick="arcoSend()">SEND →</button>
-        <button class="hdr-btn warn" id="arco-stop-btn" onclick="arcoStop()" style="display:none;" title="Stop">■ Stop</button>
+        <button class="hdr-btn warn" id="arco-stop-btn" onclick="arcoStop()" style="display:none;" title="Stop processing">■ Stop</button>
         <button class="hdr-btn success" id="arco-send-promap" onclick="sendToPromap()" style="opacity:.35;cursor:not-allowed;" title="Send extracted steps to PROMAP">→ PROMAP</button>
         <button class="hdr-btn" onclick="arcoReset()" title="Reset conversation">↺</button>
       </div>
@@ -221,7 +232,7 @@
       <div style="padding:14px;font-size:12px;color:var(--text2);line-height:1.8;" id="arco-hints">
         ARCŌ will extract:<br/>
         · Step names &amp; sequence<br/>
-        · Department &amp; owners (RACI)<br/>
+        · Owners &amp; RACI<br/>
         · Timing &amp; frequency<br/>
         · Control &amp; compliance flags<br/>
         · Critical control points<br/>
@@ -230,6 +241,9 @@
       </div>
     </div>
   </div>
+
+</div>
+
 
   <!-- CORTEX VIEW -->
   <div id="cortex-view" style="display:none;flex:1;min-height:0;flex-direction:column;">
@@ -247,8 +261,6 @@
       </div>
     </div>
   </div>
-
-</div>
 
 <!-- NOTIFICATIONS -->
 <div id="notif-area"></div>
@@ -303,33 +315,20 @@
 <script src="/js/arco.js"></script>
 <script src="/js/cortex.js"></script>
 <script>
-  // ── TAB SWITCHING ────────────────────────────────
+  // Tab switching — wires both modules
   function switchTab(el, tab) {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    document.getElementById('promap-view').style.display  = tab==='promap'  ? 'flex' : 'none';
-    document.getElementById('arco-view').style.display    = tab==='arco'    ? 'flex' : 'none';
-    document.getElementById('cortex-view').style.display  = tab==='cortex'  ? 'flex' : 'none';
-    document.getElementById('sidebar-promap').style.display = tab==='promap' ? '' : 'none';
-    document.getElementById('sidebar-arco').style.display   = tab==='arco'   ? '' : 'none';
-
-    if (tab==='arco') {
-      if (document.getElementById('arco-feed').children.length===0) arcoGreet();
-      if (typeof syncProcessContext==='function') syncProcessContext();
-    }
-    if (tab==='cortex') {
-      if (typeof cortexEvaluate==='function' && window.State?.currentProcess) cortexEvaluate();
-    }
-
-    // Show/hide audit button
-    const auditBtn = document.getElementById('btn-audit');
-    if (auditBtn) auditBtn.style.display = (tab==='promap' && window.State?.currentProcess) ? '' : 'none';
+    document.getElementById('promap-view').style.display  = tab === 'promap'  ? 'flex' : 'none';
+    document.getElementById('arco-view').style.display    = tab === 'arco'    ? 'flex' : 'none';
+    document.getElementById('cortex-view').style.display  = tab === 'cortex'  ? 'flex' : 'none';
+    document.getElementById('sidebar-promap').style.display = tab === 'promap' ? 'block' : 'none';
+    document.getElementById('sidebar-arco').style.display   = tab === 'arco'   ? 'block' : 'none';
+    if (tab === 'arco' && document.getElementById('arco-feed').children.length === 0) arcoGreet();
+    if (tab === 'arco' && typeof syncProcessContext === 'function') syncProcessContext();
   }
 
   function arcoPrompt(text) {
-    // Switch to ARCO tab first
-    const tab = document.querySelector('.nav-tab:nth-child(2)');
-    if (tab) switchTab(tab, 'arco');
     document.getElementById('arco-input').value = text;
     arcoSend();
   }

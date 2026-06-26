@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
-   MERIDIAN — ARCŌ Conversational Intake v1.6.13
-   v1.6.13: LAY-12 two-pass layout on ARCŌ insert (DOM timing fix)
+   MERIDIAN — ARCŌ Conversational Intake v1.6.11
+   Fixes: BUG-02/03/04 panel refresh + dedup; N61 connector reliability
    ═══════════════════════════════════════════════ */
 
 const ARCO = {
@@ -346,6 +346,7 @@ function doInsertToPromap(replaceAll) {
     State.nodeCounter = 0;
   }
 
+  const START_X = 80, START_Y = 100, GAP_X = 260, GAP_Y = 160, COLS = 4;
   const insertStart = State.nodes.length;
   const idMap = {};
 
@@ -365,10 +366,12 @@ function doInsertToPromap(replaceAll) {
     const id = `N-${String(State.nodeCounter).padStart(3,'0')}`;
     const stepId = step.stepId || (step.type === 'start' || step.type === 'end' ? '' : id);
     if (step.stepId) idMap[step.stepId] = id;
-    // x/y set to 0 — autoLayout() below is the single source of positioning
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
     State.nodes.push({
       id, ...step,
-      x: 0, y: 0,
+      x: START_X + col * GAP_X,
+      y: START_Y + row * GAP_Y,
       stepId,
       level: step.level || 'L4',
       classifications: step.classifications || [],
@@ -400,22 +403,15 @@ function doInsertToPromap(replaceAll) {
   });
 
   State.dirty = true;
+  // N39: audit entry for ARCŌ→PROMAP action
   if (typeof bufferAudit === 'function') {
     bufferAudit('modified', `ARCŌ sent ${stepsToInsert.length} step(s) to canvas (${replaceAll?'replace all':'append new'})`, { field:'nodes', from:replaceAll?0:insertStart, to:State.nodes.length }, 'ARCŌ');
   }
   const empty = document.getElementById('empty-state');
   if (empty) empty.style.display = 'none';
-  // LAY-12: switch to PROMAP view FIRST so DOM renders nodes before autoLayout measures them
+  if (typeof renderCanvas === 'function') renderCanvas();
+  if (typeof autoLayout === 'function') autoLayout();
   if (typeof switchToPromap === 'function') switchToPromap();
-  if (typeof renderCanvas === 'function') renderCanvas(); // initial render — nodes exist in DOM
-  if (typeof autoLayout === 'function') {
-    // Pass 1 — immediate (estimated sizes)
-    autoLayout();
-    // Pass 2 — deferred (real DOM sizes now available after first render)
-    setTimeout(() => {
-      if (typeof autoLayout === 'function') autoLayout();
-    }, 120);
-  }
   if (typeof notify === 'function') notify(`${stepsToInsert.length} steps sent to PROMAP`, 'success');
   appendMessage('assistant', `✓ ${stepsToInsert.length} steps sent to PROMAP canvas.`);
 }

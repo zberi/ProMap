@@ -18,7 +18,7 @@ function readData() { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
 function writeData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
 // ── HEALTH ───────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', version:'1.6.11', arcoMode: ARCO_MODE }));
+app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', version:'1.6.13', arcoMode: ARCO_MODE }));
 
 // ── AUDIT LOG HELPERS ────────────────────────────
 function makeAuditEntry(action, module, detail, changes) {
@@ -279,7 +279,14 @@ Output these even if empty (empty array). Never omit them.
 frequency=monthly, inputType=manual, classifications=["control"], monitoring=true, recordRequired=true, retentionPeriod="10 years", level=L4, department=inferred from context
 
 ## TONE
-Professional, concise, enterprise-grade. One question at a time. You are ARCŌ, the MERIDIAN process intake assistant — not a generic AI.`;
+Professional, concise, enterprise-grade. One question at a time. You are ARCŌ, the MERIDIAN process intake assistant — not a generic AI.
+
+## CRITICAL OUTPUT DISCIPLINE
+- NEVER output raw JSON in the chat message text under any circumstances.
+- ALL structured data (steps, connections, registers) must be inside their XML tags ONLY.
+- After extracting steps, tell the user in plain English what was found, then prompt them to press → PROMAP.
+- If you feel the urge to show JSON — stop. Convert it to a plain English summary instead.
+- Example: Instead of showing a JSON array, say "I've extracted 12 steps across 3 departments including 2 CCPs. Press → PROMAP to send to canvas."`;
 
 app.get('/api/arco/mode', (req, res) => res.json({ mode: ARCO_MODE }));
 
@@ -319,10 +326,19 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`\n  ╔══════════════════════════════════════════╗`);
-  console.log(`  ║  MERIDIAN v1.6.11 —  Running on :${PORT}  ║`);
-  console.log(`  ║  http://localhost:${PORT}                 ║`);
-  console.log(`  ║  ARCŌ mode: ${ARCO_MODE.padEnd(28)}║`);
-  console.log(`  ╚══════════════════════════════════════════╝\n`);
-});
+##//app.listen(PORT, () => {
+##  console.log(`\n  ╔══════════════════════════════════════════╗`);
+##  console.log(`  ║  MERIDIAN v1.6.13 —  Running on :${PORT}  ║`);
+##  console.log(`  ║  http://localhost:${PORT}                 ║`);
+##  console.log(`  ║  ARCŌ mode: ${ARCO_MODE.padEnd(28)}║`);
+##  console.log(`  ╚══════════════════════════════════════════╝\n`);
+
+
+// REPLACE with:
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`MERIDIAN running on :${PORT}`);
+  });
+}
+
+module.exports = app;
