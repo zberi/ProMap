@@ -11,28 +11,11 @@ app.use(express.static('public'));
 const fs = require('fs');
 const path = require('path');
 const DATA_FILE = path.join(__dirname, 'data', 'processes.json');
+if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'));
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
 
-// Only run local file system setup when running outside production
-if (process.env.NODE_ENV !== 'production') {
-  if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'));
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
-}
-
-function readData() { 
-  try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); 
-  } catch (e) {
-    return { processes: [] };
-  }
-}
-
-function writeData(data) { 
-  if (process.env.NODE_ENV === 'production') {
-    console.warn("Write operation ignored: Local mutations are not supported on Vercel serverless environments.");
-    return;
-  }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); 
-}
+function readData() { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
+function writeData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
 // ── HEALTH ───────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', version:'1.6.13', arcoMode: ARCO_MODE }));
@@ -51,6 +34,7 @@ function makeAuditEntry(action, module, detail, changes) {
 function appendAudit(process, entry) {
   if (!process.auditLog) process.auditLog = [];
   process.auditLog.push(entry);
+  // Cap at 500 entries per process
   if (process.auditLog.length > 500) process.auditLog = process.auditLog.slice(-500);
 }
 
@@ -83,6 +67,7 @@ app.put('/api/processes/:id', (req, res) => {
   const prev = data.processes[idx];
   const next = { ...prev, ...req.body, id:req.params.id, updatedAt:new Date().toISOString(), version:(prev.version||1)+1 };
 
+  // Preserve existing audit log + append new entries
   if (!next.auditLog) next.auditLog = prev.auditLog || [];
 
   const module = req.body._auditModule || 'PROMAP';
@@ -90,10 +75,12 @@ app.put('/api/processes/:id', (req, res) => {
   delete next._auditModule;
   delete next._auditEntries;
 
+  // Status change
   if (prev.status !== next.status) {
     appendAudit(next, makeAuditEntry(next.status, module, `Status changed: ${prev.status} → ${next.status}`, { field:'status', from:prev.status, to:next.status }));
   }
 
+  // Node count change
   const prevNodeCount = (prev.nodes||[]).length;
   const nextNodeCount = (next.nodes||[]).length;
   if (prevNodeCount !== nextNodeCount) {
@@ -101,14 +88,17 @@ app.put('/api/processes/:id', (req, res) => {
     appendAudit(next, makeAuditEntry('modified', module, `${delta>0?'Added':'Removed'} ${Math.abs(delta)} step(s) — total: ${nextNodeCount}`, { field:'nodes', from:prevNodeCount, to:nextNodeCount }));
   }
 
+  // Connection count change
   const prevConnCount = (prev.connections||[]).length;
   const nextConnCount = (next.connections||[]).length;
   if (prevConnCount !== nextConnCount) {
     appendAudit(next, makeAuditEntry('modified', module, `Connections: ${prevConnCount} → ${nextConnCount}`, { field:'connections', from:prevConnCount, to:nextConnCount }));
   }
 
+  // Extra audit entries passed from client (field-level changes)
   auditEntries.forEach(e => appendAudit(next, e));
 
+  // Generic save entry if no specific changes detected
   if (!auditEntries.length && prev.status === next.status && prevNodeCount === nextNodeCount && prevConnCount === nextConnCount) {
     appendAudit(next, makeAuditEntry('modified', module, `Process "${next.name}" saved (v${next.version})`));
   }
@@ -120,6 +110,11 @@ app.put('/api/processes/:id', (req, res) => {
 
 app.delete('/api/processes/:id', (req, res) => {
   const data = readData();
+  const p = data.processes.find(p => p.id === req.params.id);
+  if (p) {
+    // Archive the audit log to a separate deleted log before removing
+    // (For V1 — just remove; in V2 soft-delete will preserve)
+  }
   data.processes = data.processes.filter(p => p.id !== req.params.id);
   writeData(data);
   res.json({ success: true });
@@ -331,9 +326,18 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
+##//app.listen(PORT, () => {
+##  console.log(`\n  ╔══════════════════════════════════════════╗`);
+##  console.log(`  ║  MERIDIAN v1.6.13 —  Running on :${PORT}  ║`);
+##  console.log(`  ║  http://localhost:${PORT}                 ║`);
+##  console.log(`  ║  ARCŌ mode: ${ARCO_MODE.padEnd(28)}║`);
+##  console.log(`  ╚══════════════════════════════════════════╝\n`);
+
+
+// REPLACE with:
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`MERIDIAN running locally on port ${PORT}`);
+    console.log(`MERIDIAN running on :${PORT}`);
   });
 }
 
