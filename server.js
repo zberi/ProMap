@@ -6,13 +6,13 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || null;
 const ARCO_MODE = ANTHROPIC_API_KEY ? 'live' : 'mock';
 
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static('api'));
 
 const fs = require('fs');
 const path = require('path');
 const DATA_FILE = path.join(__dirname, 'data', 'processes.json');
 
-// FIX 1: Only run local file system setup when running outside production
+// Only run local file system setup when running outside production
 if (process.env.NODE_ENV !== 'production') {
   if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'));
   if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
@@ -41,10 +41,10 @@ app.get('/api/health', (req, res) => res.json({ status:'ok', system:'MERIDIAN', 
 function makeAuditEntry(action, module, detail, changes) {
   return {
     ts: new Date().toISOString(),
-    action,   // created | modified | deleted | published | archived | evaluated
-    module,   // PROMAP | ARCŌ | CORTEX | SYSTEM
-    detail,   // human-readable summary
-    changes: changes || null,  // { field, from, to } or null
+    action,   
+    module,   
+    detail,   
+    changes: changes || null,  
   };
 }
 
@@ -125,7 +125,6 @@ app.delete('/api/processes/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// ── AUDIT LOG ENDPOINT ───────────────────────────
 app.get('/api/processes/:id/audit', (req, res) => {
   const p = readData().processes.find(p => p.id === req.params.id);
   if (!p) return res.status(404).json({ error: 'Not found' });
@@ -187,7 +186,7 @@ app.post('/api/arco/chat', async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-3-5-sonnet-20241022',
         max_tokens: 8000,
         system,
         messages
@@ -203,12 +202,6 @@ app.post('/api/arco/chat', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-app.post('/api/arco/chat', async (req, res) => {
-  // ... your existing chat code ...
-});
-
-// REMOVED THE CATCH-ALL ROUTE ENTIRELY FROM HERE
 
 if (require.main === module) {
   app.listen(PORT, () => {
