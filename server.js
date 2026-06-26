@@ -331,6 +331,11 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
+// Fallback rule for Single Page Application assets routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`MERIDIAN running locally on port ${PORT}`);
