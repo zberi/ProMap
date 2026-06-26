@@ -1,0 +1,12 @@
+Let start building v.1.6.13. What first?
+
+25 Jun
+Given we're building against v1.6.11 state (from handoff) but only have v1.6.2 source files, I need a decision:
+
+Option A — Upload your v1.6.11 local files first
+Clean, accurate patches. Recommended.
+
+Option B — I rebuild from v1.6.2 + apply all v1.6.11 changes + v1.6.13 fixes in one pass
+I reconstruct what v1.6.11 should look like per the handoff, then add LAY-10/11/12. Larger output, some risk of drift from your actual local state.
+
+Which do you want to proceed with?

@@ -1,0 +1,16 @@
+Meridian
+
+Change management
+
+Process mapping 
+
+Process management
+Risks and Control Management
+
+
+Challenge					Solution 
+Undocumented Process 				Get process defined at right granularity
+Process evolve, documentation static		Gives perfect map of change
+Risks unknown					Risks identified, Controls instituted
+Unknown responsibilities
+process dependencies unknown
