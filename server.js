@@ -6,7 +6,8 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || null;
 const ARCO_MODE = ANTHROPIC_API_KEY ? 'live' : 'mock';
 
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('api'));
+app.use(express.static('public'))
+#app.use(express.static('api'));
 
 const fs = require('fs');
 const path = require('path');
