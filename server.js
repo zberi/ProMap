@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const DATA_FILE = path.join(__dirname, 'data', 'processes.json');
 
-// Only run local file system setup when running outside production
+// FIX 1: Only run local file system setup when running outside production
 if (process.env.NODE_ENV !== 'production') {
   if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'));
   if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
@@ -164,7 +164,7 @@ if (multer) {
 }
 
 // ── ARCŌ CHAT ────────────────────────────────────
-const ARCO_SYSTEM = `You are ARCŌ — the conversational process intake assistant for MERIDIAN...`; // system prompt string truncated for brevity
+const ARCO_SYSTEM = `You are ARCŌ — the conversational process intake assistant for MERIDIAN...`; 
 
 app.get('/api/arco/mode', (req, res) => res.json({ mode: ARCO_MODE }));
 
@@ -204,7 +204,7 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
-// Fallback rule for Single Page Application assets routing (Express 5 layout syntax)
+// FIX 2: Fallback rule for Single Page Application assets routing (Express 5 layout syntax)
 app.get('/:catchall*', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
 });
