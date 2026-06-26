@@ -204,10 +204,11 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
-// FIX 2: Fallback rule for Single Page Application assets routing (Express 5 layout syntax)
-app.get('/:catchall*', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
+app.post('/api/arco/chat', async (req, res) => {
+  // ... your existing chat code ...
 });
+
+// REMOVED THE CATCH-ALL ROUTE ENTIRELY FROM HERE
 
 if (require.main === module) {
   app.listen(PORT, () => {
