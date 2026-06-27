@@ -11,7 +11,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DATA_DIR = process.env.NODE_ENV === 'production' ? '/tmp/data' : path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'processes.json');
+const DATA_DIR = path.join(__dirname, 'data');
+//replaced by above line const DATA_FILE = path.join(DATA_DIR, 'processes.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
 
