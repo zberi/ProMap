@@ -207,10 +207,15 @@ app.post('/api/arco/chat', async (req, res) => {
 //app.listen(PORT, () => { ... });
 
 // REPLACE with:
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`MERIDIAN running on :${PORT}`);
-  });
-}
+//if (require.main === module) {
+//  app.listen(PORT, () => {
+//    console.log(`MERIDIAN running on :${PORT}`);
+//  });
+//}
 
+//module.exports = app;
+
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`MERIDIAN :${PORT}`));
+}
 module.exports = app;
