@@ -10,7 +10,20 @@ app.use(express.static('public'))
 
 const fs = require('fs');
 const path = require('path');
-const DATA_FILE = path.join(__dirname, 'data', 'processes.json');
+const DATA_DIR = process.env.NODE_ENV === 'production' ? '/tmp/data' : path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'processes.json');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
+
+//const path = require('path');
+//const DATA_FILE = path.join(__dirname, 'data', 'processes.json');
+
+//file block replacement version 2
+// Replace your file init block with 26/06/2026:
+//const DATA_DIR = path.join('/tmp', 'data');
+//const DATA_FILE = path.join(DATA_DIR, 'processes.json');
+//if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+//if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ processes: [] }, null, 2));
 
 // Only run local file system setup when running outside production
 if (process.env.NODE_ENV !== 'production') {
@@ -26,11 +39,15 @@ function readData() {
   }
 }
 
-function writeData(data) { 
-  if (process.env.NODE_ENV === 'production') {
-    console.warn("Write operation ignored: Local mutations are not supported on Vercel serverless environments.");
-    return;
-  }
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+xx
+//function writeData(data) { 
+  //if (process.env.NODE_ENV === 'production') {
+  //  console.warn("Write operation ignored: Local mutations are not supported on Vercel serverless environments.");
+  //  return;
+  //}
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); 
 }
 
