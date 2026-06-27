@@ -204,7 +204,7 @@ app.post('/api/arco/chat', async (req, res) => {
 });
 
 // REMOVE this:
-app.listen(PORT, () => { ... });
+//app.listen(PORT, () => { ... });
 
 // REPLACE with:
 if (require.main === module) {
