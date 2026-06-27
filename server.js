@@ -8,7 +8,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || null;
 const ARCO_MODE = ANTHROPIC_API_KEY ? 'live' : 'mock';
 
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 const DATA_DIR = process.env.NODE_ENV === 'production' ? '/tmp/data' : path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'processes.json');
