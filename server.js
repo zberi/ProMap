@@ -203,9 +203,13 @@ app.post('/api/arco/chat', async (req, res) => {
   }
 });
 
+// REMOVE this:
+app.listen(PORT, () => { ... });
+
+// REPLACE with:
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`MERIDIAN running locally on port ${PORT}`);
+    console.log(`MERIDIAN running on :${PORT}`);
   });
 }
 
