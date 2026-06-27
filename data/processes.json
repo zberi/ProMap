@@ -3,8 +3,8 @@
     {
       "id": "P-1780744741957",
       "createdAt": "2026-06-06T11:19:01.957Z",
-      "updatedAt": "2026-06-26T09:40:25.164Z",
-      "version": 96,
+      "updatedAt": "2026-06-27T06:37:05.433Z",
+      "version": 99,
       "status": "draft",
       "name": "Containers SUper",
       "processId": "",
@@ -15,237 +15,59 @@
       "level": "L1",
       "nodes": [
         {
-          "id": "N-017",
-          "name": "Customer Places Order",
-          "type": "start",
+          "id": "N-001",
+          "name": "PO Funding Request Submission",
+          "type": "handoff",
           "stepId": "S1",
-          "department": "Operations",
-          "responsible": "Shopify Platform",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Team",
-          "timing": "T+0",
-          "frequency": "per-order",
+          "department": "Procurement",
+          "responsible": "Procurement Officer",
+          "accountable": "Procurement Manager",
+          "consulted": "Budget Controller",
+          "informed": "AP Supervisor",
+          "timing": "Same day as PO approval",
+          "frequency": "ad-hoc",
           "inputType": "system",
           "classifications": [
-            "information"
+            "control",
+            "compliance-internal"
           ],
-          "monitoring": false,
+          "monitoring": true,
           "thresholds": [],
           "recordRequired": true,
           "recordType": "system",
           "retentionPeriod": "10 years",
           "loopConfirm": false,
           "level": "L4",
-          "notes": "Order received via Shopify storefront. Triggers fulfilment workflow automatically.",
+          "notes": "Approved PO is submitted to Treasury via ERP for funding confirmation. PO must carry approval stamp and cost centre code.",
           "x": 80,
           "y": 116
         },
         {
-          "id": "N-018",
-          "name": "Order Confirmation & Payment Verification",
-          "type": "system",
+          "id": "N-003",
+          "name": "Payment Instruction & Scheduling",
+          "type": "process",
           "stepId": "S2",
-          "department": "Operations",
-          "responsible": "Shopify Platform",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Team",
-          "timing": "T+0 to T+5 mins",
-          "frequency": "per-order",
+          "department": "Treasury",
+          "responsible": "Treasury Analyst",
+          "accountable": "Treasury Manager",
+          "consulted": "AP Supervisor",
+          "informed": "Procurement Officer",
+          "timing": "Within 24 hours of budget confirmation",
+          "frequency": "ad-hoc",
           "inputType": "system",
           "classifications": [
             "control",
-            "compliance-internal"
-          ],
-          "monitoring": true,
-          "thresholds": [
-            {
-              "parameter": "Payment authorisation",
-              "min": "1",
-              "max": "1",
-              "unit": "confirmed",
-              "action": "Flag order and hold — do not proceed to pick"
-            }
-          ],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Shopify validates payment gateway response. Failed payments must not proceed to warehouse.",
-          "x": 460,
-          "y": 116
-        },
-        {
-          "id": "N-019",
-          "name": "Payment Confirmed?",
-          "type": "decision",
-          "stepId": "S3",
-          "department": "Operations",
-          "responsible": "Shopify Platform",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Team",
-          "timing": "T+5 mins",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "control"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": false,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "YES → proceed to stock check. NO → notify customer, cancel or retry payment.",
-          "x": 892,
-          "y": 116
-        },
-        {
-          "id": "N-020",
-          "name": "Order Transmitted to WMS",
-          "type": "system",
-          "stepId": "S4",
-          "department": "Warehouse",
-          "responsible": "Shopify Platform",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Warehouse Team",
-          "timing": "T+5 mins",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "information"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Shopify pushes confirmed order details to WMS via integration. Pick list generated automatically.",
-          "x": 80,
-          "y": 1417
-        },
-        {
-          "id": "N-021",
-          "name": "Stock Availability Check",
-          "type": "control",
-          "stepId": "S5",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Manager",
-          "timing": "T+10 mins",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "control",
-            "information"
-          ],
-          "monitoring": true,
-          "thresholds": [
-            {
-              "parameter": "Stock on hand",
-              "min": "1",
-              "max": "",
-              "unit": "units",
-              "action": "Trigger back-order process — notify customer of delay"
-            }
-          ],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "WMS checks real-time inventory against order line items.",
-          "x": 944,
-          "y": 1417
-        },
-        {
-          "id": "N-022",
-          "name": "All Items In Stock?",
-          "type": "decision",
-          "stepId": "S6",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Manager",
-          "timing": "T+10 mins",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "control"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": false,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "YES → proceed to picking. NO → initiate back-order for out-of-stock items.",
-          "x": 80,
-          "y": 1735
-        },
-        {
-          "id": "N-023",
-          "name": "Initiate Back-Order",
-          "type": "process",
-          "stepId": "S7",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Customer",
-          "timing": "T+15 mins",
-          "frequency": "per-order",
-          "inputType": "manual",
-          "classifications": [
             "compliance-internal",
-            "information"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Back-order raised in WMS. Customer notified of delay via Shopify automated email. Partial fulfilment considered if some items are in stock.",
-          "x": 932,
-          "y": 1735
-        },
-        {
-          "id": "N-024",
-          "name": "Order Picking",
-          "type": "process",
-          "stepId": "S8",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "",
-          "timing": "T+15 mins to T+2 hrs",
-          "frequency": "per-order",
-          "inputType": "manual",
-          "classifications": [
-            "control"
+            "reporting"
           ],
           "monitoring": true,
           "thresholds": [
             {
-              "parameter": "Pick accuracy",
-              "min": "100",
-              "max": "100",
-              "unit": "%",
-              "action": "Re-pick incorrect items before proceeding to packing"
+              "parameter": "Payment scheduling lead time",
+              "min": "",
+              "max": "24",
+              "unit": "hours",
+              "action": "Escalate to Treasury Manager if instruction is not issued within 24 hours of budget sign-off."
             }
           ],
           "recordRequired": true,
@@ -253,35 +75,36 @@
           "retentionPeriod": "10 years",
           "loopConfirm": false,
           "level": "L4",
-          "notes": "Picker follows WMS-generated pick list. Barcode scanning recommended to validate each item picked.",
-          "x": 500,
-          "y": 1735
+          "notes": "Treasury issues bank transfer instruction aligned to supplier payment terms. Instruction is passed to AP for execution.",
+          "x": 944,
+          "y": 485
         },
         {
-          "id": "N-025",
-          "name": "Pick Verification",
+          "id": "N-009",
+          "name": "3-Way Invoice Match",
           "type": "ccp",
-          "stepId": "S9",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Manager",
-          "timing": "T+2 hrs",
-          "frequency": "per-order",
-          "inputType": "manual",
+          "stepId": "S3",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Procurement Officer",
+          "informed": "Treasury Analyst",
+          "timing": "Upon receipt of supplier invoice",
+          "frequency": "ad-hoc",
+          "inputType": "system",
           "classifications": [
             "control",
-            "compliance-internal"
+            "compliance-internal",
+            "compliance-regulatory"
           ],
           "monitoring": true,
           "thresholds": [
             {
-              "parameter": "Order accuracy",
-              "min": "100",
-              "max": "100",
-              "unit": "%",
-              "action": "Halt packing — return incorrect items, re-pick correct items before proceeding"
+              "parameter": "Invoice vs PO vs GRN value variance",
+              "min": "",
+              "max": "0.5",
+              "unit": "% variance",
+              "action": "Place invoice on hold. Notify Procurement Officer and supplier. Resolve discrepancy before proceeding. Do not release payment."
             }
           ],
           "recordRequired": true,
@@ -289,205 +112,380 @@
           "retentionPeriod": "10 years",
           "loopConfirm": true,
           "level": "L4",
-          "notes": "CCP — incorrect items shipped cannot be recovered without customer return and re-dispatch. Full order verification against pick list required before packing commences.",
-          "x": 1383,
-          "y": 1954
-        },
-        {
-          "id": "N-026",
-          "name": "Order Packing",
-          "type": "process",
-          "stepId": "S10",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "",
-          "timing": "T+2 hrs to T+4 hrs",
-          "frequency": "per-order",
-          "inputType": "manual",
-          "classifications": [
-            "control"
-          ],
-          "monitoring": false,
-          "thresholds": [],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Items packed securely. Packing slip inserted. Packaging standard must protect items in transit.",
+          "notes": "CCP — Matches supplier invoice against approved PO and Goods Receipt Note (GRN). Failure at this point cannot be recovered post-payment. Tolerance set at 0.5% variance.",
           "x": 80,
-          "y": 2036
+          "y": 851
         },
         {
-          "id": "N-027",
-          "name": "Shipping Label Generation",
-          "type": "system",
-          "stepId": "S11",
-          "department": "Warehouse",
-          "responsible": "Courier Integration",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Warehouse Team",
-          "timing": "T+4 hrs",
-          "frequency": "per-order",
+          "id": "N-013",
+          "name": "Payment Execution & Bank Transfer",
+          "type": "process",
+          "stepId": "S4",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Treasury Analyst",
+          "informed": "Procurement Officer",
+          "timing": "On scheduled payment value date",
+          "frequency": "ad-hoc",
           "inputType": "system",
-          "classifications": [
-            "information"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Courier integration generates shipping label and tracking number automatically. Label applied to parcel.",
-          "x": 512,
-          "y": 2036
-        },
-        {
-          "id": "N-028",
-          "name": "Dispatch & Handoff to Courier",
-          "type": "handoff",
-          "stepId": "S12",
-          "department": "Warehouse",
-          "responsible": "Warehouse Team",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Customer",
-          "timing": "T+4 hrs to T+8 hrs",
-          "frequency": "per-order",
-          "inputType": "manual",
           "classifications": [
             "control",
-            "information"
+            "reporting"
           ],
           "monitoring": true,
           "thresholds": [
             {
-              "parameter": "Dispatch within 48hr window",
-              "min": "",
-              "max": "48",
-              "unit": "hours from order",
-              "action": "Escalate to Operations Manager — SLA breach risk"
+              "parameter": "Payment value match to approved instruction",
+              "min": "100",
+              "max": "100",
+              "unit": "% match",
+              "action": "Halt payment. Notify AP Supervisor and Treasury Manager immediately. Do not proceed until discrepancy is resolved."
             }
           ],
           "recordRequired": true,
           "recordType": "system",
           "retentionPeriod": "10 years",
-          "loopConfirm": false,
+          "loopConfirm": true,
           "level": "L4",
-          "notes": "Physical handoff of parcels to courier driver. Proof of collection obtained. Customer notified of dispatch with tracking number via Shopify.",
-          "x": 1323,
-          "y": 728
+          "notes": "Bank transfer executed via ERP/banking platform. Payment amount, beneficiary account and reference must match Treasury instruction exactly.",
+          "x": 512,
+          "y": 1191
         },
         {
-          "id": "N-029",
-          "name": "Shipment in Transit",
-          "type": "process",
-          "stepId": "S13",
-          "department": "Operations",
-          "responsible": "Courier Company",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Customer",
-          "timing": "T+8 hrs to T+48 hrs",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "information"
-          ],
-          "monitoring": true,
-          "thresholds": [
-            {
-              "parameter": "Delivery within SLA",
-              "min": "",
-              "max": "48",
-              "unit": "hours from order",
-              "action": "Monitor tracking — flag delayed shipments to Operations Manager"
-            }
-          ],
-          "recordRequired": true,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "Courier manages delivery. Tracking updates fed back via integration. Customer can self-serve tracking via Shopify notification.",
-          "x": 1312,
-          "y": 116
-        },
-        {
-          "id": "N-030",
-          "name": "Delivery Attempted?",
-          "type": "decision",
-          "stepId": "S14",
-          "department": "Operations",
-          "responsible": "Courier Company",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Customer",
-          "timing": "T+48 hrs",
-          "frequency": "per-order",
-          "inputType": "system",
-          "classifications": [
-            "control"
-          ],
-          "monitoring": true,
-          "thresholds": [],
-          "recordRequired": false,
-          "recordType": "system",
-          "retentionPeriod": "10 years",
-          "loopConfirm": false,
-          "level": "L4",
-          "notes": "YES → delivered successfully, proceed to order closure. NO → courier manages re-delivery or returns parcel to warehouse.",
-          "x": 100,
-          "y": 471
-        },
-        {
-          "id": "N-031",
-          "name": "Failed Delivery — Return to Warehouse",
-          "type": "process",
-          "stepId": "S15",
-          "department": "Warehouse",
-          "responsible": "Courier Company",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Team",
-          "timing": "Post T+48 hrs",
-          "frequency": "per-order",
+          "id": "N-002",
+          "name": "Budget Availability Check",
+          "type": "control",
+          "stepId": "S1.1",
+          "department": "Treasury",
+          "responsible": "Treasury Analyst",
+          "accountable": "Treasury Manager",
+          "consulted": "Budget Controller",
+          "informed": "Procurement Manager",
+          "timing": "Within 4 hours of S1",
+          "frequency": "ad-hoc",
           "inputType": "system",
           "classifications": [
             "control",
             "compliance-internal"
           ],
           "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Available budget vs PO value",
+              "min": "100",
+              "max": "",
+              "unit": "% coverage",
+              "action": "Escalate to CFO if budget coverage falls below 100%. PO to be placed on hold."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "Treasury verifies cash availability and budget line coverage before releasing PO for payment processing.",
+          "x": 80,
+          "y": 485
+        },
+        {
+          "id": "N-005",
+          "name": "Supplier Verification Check",
+          "type": "compliance",
+          "stepId": "S1.2",
+          "department": "Procurement",
+          "responsible": "Procurement Officer",
+          "accountable": "Procurement Manager",
+          "consulted": "Legal & Compliance",
+          "informed": "Treasury Analyst",
+          "timing": "Concurrent with S1.1",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "compliance-internal",
+            "compliance-regulatory",
+            "control"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Supplier active status in ERP",
+              "min": "",
+              "max": "",
+              "unit": "boolean",
+              "action": "Halt PO submission. Escalate to Procurement Manager and Legal & Compliance for supplier revalidation."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "Confirms supplier is active, bank details are verified, and no sanctions or blacklist flags exist. Anti-bribery and KYS check applied.",
+          "x": 512,
+          "y": 116
+        },
+        {
+          "id": "N-006",
+          "name": "Delegation of Authority Confirmation",
+          "type": "compliance",
+          "stepId": "S1.3",
+          "department": "Procurement",
+          "responsible": "Procurement Manager",
+          "accountable": "CFO",
+          "consulted": "Legal & Compliance",
+          "informed": "Treasury Manager",
+          "timing": "Before handoff to Treasury",
+          "frequency": "ad-hoc",
+          "inputType": "manual",
+          "classifications": [
+            "compliance-internal",
+            "control"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "PO value vs approved authority level",
+              "min": "",
+              "max": "",
+              "unit": "currency",
+              "action": "Escalate to next approval tier per Delegation of Authority matrix. Do not proceed until correct authority has approved."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "both",
+          "retentionPeriod": "10 years",
+          "loopConfirm": true,
+          "level": "L5",
+          "notes": "Confirms PO value is within the signatory's approved authority level per the current Delegation of Authority (DoA) policy.",
+          "x": 944,
+          "y": 116
+        },
+        {
+          "id": "N-004",
+          "name": "Payment Execution & Remittance",
+          "type": "handoff",
+          "stepId": "S2.1",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Treasury Analyst",
+          "informed": "Procurement Officer",
+          "timing": "On scheduled payment date",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "control",
+            "compliance-internal",
+            "reporting"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Payment value match to PO",
+              "min": "100",
+              "max": "100",
+              "unit": "% match",
+              "action": "Halt payment and notify AP Supervisor and Treasury Manager if value discrepancy detected."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": true,
+          "level": "L5",
+          "notes": "AP executes bank transfer and issues remittance advice to supplier. Payment reference is reconciled against PO number in ERP.",
+          "x": 512,
+          "y": 851
+        },
+        {
+          "id": "N-007",
+          "name": "Payment Terms & Scheduling Confirmation",
+          "type": "process",
+          "stepId": "S2.2",
+          "department": "Treasury",
+          "responsible": "Treasury Analyst",
+          "accountable": "Treasury Manager",
+          "consulted": "Procurement Officer",
+          "informed": "AP Supervisor",
+          "timing": "Within 24 hours of S2 confirmation",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "control",
+            "compliance-internal"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Payment due date vs supplier terms",
+              "min": "",
+              "max": "0",
+              "unit": "days overdue",
+              "action": "Escalate to Treasury Manager if payment scheduling breaches agreed supplier terms."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "Confirms payment due date against supplier contract terms (e.g. Net 30/60). Schedules payment run accordingly.",
+          "x": 512,
+          "y": 485
+        },
+        {
+          "id": "N-008",
+          "name": "Treasury Payment Instruction Issuance",
+          "type": "handoff",
+          "stepId": "S2.3",
+          "department": "Treasury",
+          "responsible": "Treasury Analyst",
+          "accountable": "Treasury Manager",
+          "consulted": "",
+          "informed": "AP Supervisor",
+          "timing": "Upon completion of S2.2",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "control",
+            "compliance-internal",
+            "reporting"
+          ],
+          "monitoring": true,
           "thresholds": [],
           "recordRequired": true,
           "recordType": "system",
           "retentionPeriod": "10 years",
           "loopConfirm": false,
-          "level": "L4",
-          "notes": "Courier returns undelivered parcel to warehouse. Warehouse team inspects and restocks or re-dispatches. Customer contacted to arrange re-delivery or refund.",
-          "x": 512,
-          "y": 1417
+          "level": "L5",
+          "notes": "Formal payment instruction issued to AP via ERP, including payment amount, bank transfer details, value date and PO reference.",
+          "x": 1376,
+          "y": 485
         },
         {
-          "id": "N-032",
-          "name": "Order Closure & Records Update",
-          "type": "end",
-          "stepId": "S16",
-          "department": "Operations",
-          "responsible": "Shopify Platform",
-          "accountable": "Operations Manager",
-          "consulted": "",
-          "informed": "Operations Team",
-          "timing": "T+48 hrs",
-          "frequency": "per-order",
+          "id": "N-010",
+          "name": "Duplicate Payment Check",
+          "type": "ccp",
+          "stepId": "S3.1",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Treasury Analyst",
+          "informed": "Procurement Manager",
+          "timing": "Immediately after S3",
+          "frequency": "ad-hoc",
           "inputType": "system",
           "classifications": [
+            "control",
+            "compliance-internal"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Duplicate invoice flag",
+              "min": "",
+              "max": "0",
+              "unit": "occurrences",
+              "action": "Immediately halt payment. Escalate to AP Supervisor and Treasury Manager. Log incident for audit trail."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": true,
+          "level": "L5",
+          "notes": "CCP — ERP system checks for duplicate invoice number, supplier reference and payment amount combination. Any match halts processing immediately.",
+          "x": 944,
+          "y": 851
+        },
+        {
+          "id": "N-011",
+          "name": "Payment Approval & Dual Authorisation",
+          "type": "compliance",
+          "stepId": "S3.2",
+          "department": "Accounts Payable",
+          "responsible": "AP Supervisor",
+          "accountable": "Finance Director",
+          "consulted": "Treasury Manager",
+          "informed": "Procurement Manager",
+          "timing": "Within 4 hours of S3.1 clearance",
+          "frequency": "ad-hoc",
+          "inputType": "manual",
+          "classifications": [
             "compliance-internal",
+            "control"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Number of authorising signatories",
+              "min": "2",
+              "max": "",
+              "unit": "signatories",
+              "action": "Do not release payment. Obtain second authorisation per dual-control policy."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "both",
+          "retentionPeriod": "10 years",
+          "loopConfirm": true,
+          "level": "L5",
+          "notes": "Dual authorisation required for all payments above defined threshold per internal controls policy. Single-signatory payments above threshold are a control violation.",
+          "x": 1376,
+          "y": 851
+        },
+        {
+          "id": "N-012",
+          "name": "Tax & Withholding Compliance Check",
+          "type": "compliance",
+          "stepId": "S3.3",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Tax Manager",
+          "informed": "Finance Director",
+          "timing": "Concurrent with S3.2",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "compliance-regulatory",
+            "control"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Withholding tax correctly applied",
+              "min": "",
+              "max": "",
+              "unit": "boolean",
+              "action": "Halt payment. Notify Tax Manager for correction. Do not release until tax treatment is confirmed."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "Validates VAT, withholding tax and any applicable statutory deductions per local tax regulations before payment release.",
+          "x": 80,
+          "y": 1191
+        },
+        {
+          "id": "N-014",
+          "name": "Remittance Advice Issuance",
+          "type": "process",
+          "stepId": "S4.1",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "",
+          "informed": "Procurement Officer",
+          "timing": "Same day as S4",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "information",
             "reporting"
           ],
           "monitoring": false,
@@ -496,209 +494,238 @@
           "recordType": "system",
           "retentionPeriod": "10 years",
           "loopConfirm": false,
-          "level": "L4",
-          "notes": "Order marked as fulfilled in Shopify and WMS. Inventory levels updated. Delivery confirmation recorded. Process complete.",
-          "x": 500,
-          "y": 434
+          "level": "L5",
+          "notes": "Remittance advice issued to supplier via email or supplier portal confirming payment amount, date, PO reference and invoice number.",
+          "x": 944,
+          "y": 1191
+        },
+        {
+          "id": "N-015",
+          "name": "ERP Reconciliation & Ledger Update",
+          "type": "system",
+          "stepId": "S4.2",
+          "department": "Accounts Payable",
+          "responsible": "AP Clerk",
+          "accountable": "AP Supervisor",
+          "consulted": "Treasury Analyst",
+          "informed": "Finance Director",
+          "timing": "Within 24 hours of S4",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "control",
+            "reporting"
+          ],
+          "monitoring": true,
+          "thresholds": [
+            {
+              "parameter": "Ledger vs bank statement variance",
+              "min": "",
+              "max": "0",
+              "unit": "currency",
+              "action": "Raise reconciliation exception. Notify AP Supervisor and Treasury Analyst. Investigate and resolve within 48 hours."
+            }
+          ],
+          "recordRequired": true,
+          "recordType": "system",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "ERP automatically posts payment to supplier ledger and updates bank account balance. Reconciliation report generated for Finance Director review.",
+          "x": 1376,
+          "y": 1191
+        },
+        {
+          "id": "N-016",
+          "name": "Payment Audit Trail & Record Closure",
+          "type": "compliance",
+          "stepId": "S4.3",
+          "department": "Accounts Payable",
+          "responsible": "AP Supervisor",
+          "accountable": "Finance Director",
+          "consulted": "Internal Audit",
+          "informed": "Treasury Manager",
+          "timing": "Within 48 hours of S4",
+          "frequency": "ad-hoc",
+          "inputType": "system",
+          "classifications": [
+            "compliance-internal",
+            "compliance-regulatory",
+            "reporting"
+          ],
+          "monitoring": true,
+          "thresholds": [],
+          "recordRequired": true,
+          "recordType": "both",
+          "retentionPeriod": "10 years",
+          "loopConfirm": false,
+          "level": "L5",
+          "notes": "Full audit trail archived: PO, GRN, invoice, match result, approvals, payment instruction, bank confirmation and remittance. Closed record made available to Internal Audit.",
+          "x": 80,
+          "y": 1526
         }
       ],
       "connections": [
         {
-          "id": "C-17818718034100",
-          "from": "N-017",
-          "to": "N-018",
+          "id": "C-17817197662210",
+          "from": "N-001",
+          "to": "N-002",
           "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034101",
-          "from": "N-018",
-          "to": "N-019",
-          "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034102",
-          "from": "N-019",
-          "to": "N-020",
-          "type": "sequence",
-          "label": "YES — Payment Confirmed",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034103",
-          "from": "N-019",
-          "to": "N-017",
-          "type": "exception",
-          "label": "NO — Notify Customer / Retry",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034104",
-          "from": "N-020",
-          "to": "N-021",
-          "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034105",
-          "from": "N-021",
-          "to": "N-022",
-          "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034106",
-          "from": "N-022",
-          "to": "N-024",
-          "type": "sequence",
-          "label": "YES — All In Stock",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034107",
-          "from": "N-022",
-          "to": "N-023",
-          "type": "exception",
-          "label": "NO — Back-Order Items",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034108",
-          "from": "N-023",
-          "to": "N-024",
-          "type": "sequence",
-          "label": "Partial or back-order confirmed",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-17818718034109",
-          "from": "N-024",
-          "to": "N-025",
-          "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341010",
-          "from": "N-025",
-          "to": "N-026",
-          "type": "sequence",
-          "label": "Verified — Proceed to Pack",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341011",
-          "from": "N-025",
-          "to": "N-024",
-          "type": "exception",
-          "label": "Fail — Re-Pick",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341012",
-          "from": "N-026",
-          "to": "N-027",
-          "type": "sequence",
-          "label": "",
-          "_highlighted": "backward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341013",
-          "from": "N-027",
-          "to": "N-028",
-          "type": "sequence",
-          "label": "",
+          "label": "PO submitted for funding check",
           "_highlighted": null,
-          "_immediateHighlight": "upstream"
+          "_immediateHighlight": null
         },
         {
-          "id": "C-178187180341014",
-          "from": "N-028",
-          "to": "N-029",
+          "id": "C-17817197662211",
+          "from": "N-002",
+          "to": "N-003",
           "type": "sequence",
-          "label": "",
+          "label": "Budget confirmed",
           "_highlighted": null,
-          "_immediateHighlight": "downstream"
+          "_immediateHighlight": null
         },
         {
-          "id": "C-178187180341015",
-          "from": "N-029",
-          "to": "N-030",
+          "id": "C-17817197662212",
+          "from": "N-003",
+          "to": "N-004",
           "type": "sequence",
-          "label": "",
-          "_highlighted": "forward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341016",
-          "from": "N-030",
-          "to": "N-032",
-          "type": "sequence",
-          "label": "YES — Delivered",
-          "_highlighted": "forward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341017",
-          "from": "N-030",
-          "to": "N-031",
-          "type": "exception",
-          "label": "NO — Failed Delivery",
-          "_highlighted": "forward",
-          "_immediateHighlight": null
-        },
-        {
-          "id": "C-178187180341018",
-          "from": "N-031",
-          "to": "N-028",
-          "type": "exception",
-          "label": "Re-dispatch",
+          "label": "Payment instruction issued",
           "_highlighted": null,
-          "_immediateHighlight": "upstream"
-        },
-        {
-          "id": "C-178187180341019",
-          "from": "N-031",
-          "to": "N-032",
-          "type": "exception",
-          "label": "Refund / Cancel",
-          "_highlighted": "forward",
           "_immediateHighlight": null
         },
         {
-          "id": "C-1781875392897",
-          "from": "N-032",
-          "to": "N-029",
+          "id": "C-17817199721400",
+          "from": "S1",
+          "to": "S1.1",
           "type": "sequence",
-          "label": "",
-          "_highlighted": "forward",
+          "label": "PO submitted",
+          "_highlighted": null,
           "_immediateHighlight": null
         },
         {
-          "id": "C-1781875468014",
-          "from": "N-029",
-          "to": "N-032",
-          "type": "loop",
-          "label": "",
-          "_highlighted": "forward",
+          "id": "C-17817199721401",
+          "from": "S1.1",
+          "to": "N-005",
+          "type": "sequence",
+          "label": "Fields validated",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721402",
+          "from": "N-005",
+          "to": "N-006",
+          "type": "sequence",
+          "label": "Supplier verified",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721403",
+          "from": "N-006",
+          "to": "S2",
+          "type": "sequence",
+          "label": "Authority confirmed — handoff to Treasury",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721404",
+          "from": "S2",
+          "to": "S2.1",
+          "type": "sequence",
+          "label": "Budget confirmed",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721405",
+          "from": "S2.1",
+          "to": "N-007",
+          "type": "sequence",
+          "label": "Liquidity assessed",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721406",
+          "from": "N-007",
+          "to": "N-008",
+          "type": "sequence",
+          "label": "Terms confirmed",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721407",
+          "from": "N-008",
+          "to": "N-009",
+          "type": "sequence",
+          "label": "Instruction issued — handoff to AP",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721408",
+          "from": "N-009",
+          "to": "N-010",
+          "type": "sequence",
+          "label": "3-way match passed",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-17817199721409",
+          "from": "N-010",
+          "to": "N-011",
+          "type": "sequence",
+          "label": "No duplicate detected",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-178171997214010",
+          "from": "N-011",
+          "to": "N-012",
+          "type": "sequence",
+          "label": "Dual auth obtained",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-178171997214011",
+          "from": "N-012",
+          "to": "N-013",
+          "type": "sequence",
+          "label": "Tax confirmed — payment released",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-178171997214012",
+          "from": "N-013",
+          "to": "N-014",
+          "type": "sequence",
+          "label": "Transfer executed",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-178171997214013",
+          "from": "N-014",
+          "to": "N-015",
+          "type": "sequence",
+          "label": "Remittance sent",
+          "_highlighted": null,
+          "_immediateHighlight": null
+        },
+        {
+          "id": "C-178171997214014",
+          "from": "N-015",
+          "to": "N-016",
+          "type": "sequence",
+          "label": "Ledger reconciled",
+          "_highlighted": null,
           "_immediateHighlight": null
         }
       ],
@@ -992,10 +1019,59 @@
           "ts": "2026-06-26T09:40:25.164Z",
           "event": "save",
           "version": 96
+        },
+        {
+          "ts": "2026-06-27T06:36:28.814Z",
+          "action": "modified",
+          "module": "PROMAP",
+          "detail": "Process \"Containers SUper\" saved (v97)",
+          "changes": null
+        },
+        {
+          "ts": "2026-06-27T06:36:32.633Z",
+          "action": "modified",
+          "module": "PROMAP",
+          "detail": "Added 16 step(s) — total: 32",
+          "changes": {
+            "field": "nodes",
+            "from": 16,
+            "to": 32
+          }
+        },
+        {
+          "ts": "2026-06-27T06:36:32.633Z",
+          "action": "modified",
+          "module": "PROMAP",
+          "detail": "Connections: 22 → 32",
+          "changes": {
+            "field": "connections",
+            "from": 22,
+            "to": 32
+          }
+        },
+        {
+          "ts": "2026-06-27T06:37:05.433Z",
+          "action": "modified",
+          "module": "PROMAP",
+          "detail": "Removed 16 step(s) — total: 16",
+          "changes": {
+            "field": "nodes",
+            "from": 32,
+            "to": 16
+          }
+        },
+        {
+          "ts": "2026-06-27T06:37:05.433Z",
+          "action": "modified",
+          "module": "PROMAP",
+          "detail": "Connections: 32 → 18",
+          "changes": {
+            "field": "connections",
+            "from": 32,
+            "to": 18
+          }
         }
-      ],
-      "_auditModule": "PROMAP",
-      "_auditEntries": []
+      ]
     },
     {
       "id": "P-1780745674200",
