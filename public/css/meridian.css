@@ -246,6 +246,7 @@ body {
 
 /* ── LAYER FILTER ───────────────────────────────── */
 #layer-filter { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:var(--bg2); border:1px solid var(--border); border-radius:20px; display:flex; align-items:center; gap:2px; padding:4px; z-index:50; backdrop-filter:blur(4px); white-space:nowrap; }
+#level-filter { position:absolute; top:52px; left:50%; transform:translateX(-50%); background:var(--bg2); border:1px solid var(--border); border-radius:20px; display:flex; align-items:center; gap:2px; padding:3px; z-index:50; backdrop-filter:blur(4px); white-space:nowrap; }
 .lf-btn { background:transparent; border:1px solid transparent; border-radius:16px; color:var(--text2); font-family:var(--font-mono); font-size:11px; font-weight:500; padding:4px 11px; cursor:pointer; transition:all .15s; }
 .lf-btn:hover { color:var(--text1); background:var(--bg3); }
 .lf-btn.active { background:var(--bg4); border-color:var(--border-hi); color:var(--text0); }
@@ -267,8 +268,9 @@ body {
 .float-ctrl-btn:hover { color:var(--text0); background:var(--bg3); }
 
 /* ── ARCŌ VIEW ──────────────────────────────────── */
-#arco-view { display:none; flex:1; min-height:0; flex-direction:column; }
-#arco-chat { flex:1; display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--border); }
+#arco-view { display:none; flex:1; min-height:0; flex-direction:row; }
+#arco-chat { flex:1; display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--border); overflow:hidden; }
+
 #arco-feed { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:14px; user-select:text; -webkit-user-select:text; }
 
 .arco-msg { display:flex; }
